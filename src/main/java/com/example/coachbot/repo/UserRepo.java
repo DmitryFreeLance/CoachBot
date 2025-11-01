@@ -11,7 +11,7 @@ public class UserRepo {
 
     public static class UserRow {
         public final String id;
-        public final String username;   // @tag без @ (как в Telegram)
+        public final String username;   // @tag без @
         public final String firstName;  // отображаемое имя
 
         public UserRow(String id, String username, String firstName) {
@@ -45,10 +45,8 @@ public class UserRepo {
             ps.setString(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    try {
-                        return Roles.valueOf(rs.getString(1));
-                    } catch (Exception ignored) {
-                    }
+                    try { return Roles.valueOf(rs.getString(1)); }
+                    catch (Exception ignored) { }
                 }
                 return Roles.USER;
             }
@@ -76,20 +74,16 @@ public class UserRepo {
     public static int countUsers() throws Exception {
         try (Connection c = Db.connect();
              PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM users WHERE active=1")) {
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getInt(1) : 0;
-            }
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
         }
     }
 
-    /**
-     * Старый метод (если где-то используется) — только id
-     */
+    /** Только id — последние сверху (rowid DESC) */
     public static List<String> allUsersPaged(int limit, int offset) throws Exception {
         List<String> out = new ArrayList<>();
         try (Connection c = Db.connect();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT id FROM users WHERE active=1 ORDER BY rowid ASC LIMIT ? OFFSET ?")) {
+                     "SELECT id FROM users WHERE active=1 ORDER BY rowid DESC LIMIT ? OFFSET ?")) {
             ps.setInt(1, Math.max(1, limit));
             ps.setInt(2, Math.max(0, offset));
             try (ResultSet rs = ps.executeQuery()) {
@@ -99,14 +93,12 @@ public class UserRepo {
         return out;
     }
 
-    /**
-     * Новый детальный метод — для красивого списка: {first_name} | @username | tg_id
-     */
+    /** Детально — последние сверху (rowid DESC) */
     public static List<UserRow> allUsersPagedDetailed(int limit, int offset) throws Exception {
         List<UserRow> out = new ArrayList<>();
         try (Connection c = Db.connect();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT id, username, first_name FROM users WHERE active=1 ORDER BY rowid ASC LIMIT ? OFFSET ?")) {
+                     "SELECT id, username, first_name FROM users WHERE active=1 ORDER BY rowid DESC LIMIT ? OFFSET ?")) {
             ps.setInt(1, Math.max(1, limit));
             ps.setInt(2, Math.max(0, offset));
             try (ResultSet rs = ps.executeQuery()) {
@@ -126,9 +118,60 @@ public class UserRepo {
         List<String> out = new ArrayList<>();
         try (Connection c = Db.connect();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT id FROM users WHERE active=1 AND (role IS NULL OR role='USER') ORDER BY rowid ASC")) {
+                     "SELECT id FROM users WHERE active=1 AND (role IS NULL OR role='USER') ORDER BY rowid DESC")) {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) out.add(rs.getString(1));
+            }
+        }
+        return out;
+    }
+
+    /** ===== Админы (для «Удалить админа») ===== */
+
+    public static int countAdmins() throws Exception {
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM users WHERE active=1 AND role='ADMIN'")) {
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
+        }
+    }
+
+    public static List<UserRow> adminsPagedDetailed(int limit, int offset) throws Exception {
+        List<UserRow> out = new ArrayList<>();
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT id, username, first_name FROM users " +
+                             "WHERE active=1 AND role='ADMIN' ORDER BY rowid DESC LIMIT ? OFFSET ?")) {
+            ps.setInt(1, Math.max(1, limit));
+            ps.setInt(2, Math.max(0, offset));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new UserRow(
+                            rs.getString("id"),
+                            rs.getString("username"),
+                            rs.getString("first_name")
+                    ));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Действующие админы (без пагинации) — если где-то нужно */
+    public static List<UserRow> listActiveAdminsDetailed() throws Exception {
+        List<UserRow> out = new ArrayList<>();
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT id, username, first_name FROM users " +
+                             "WHERE active=1 AND role='ADMIN' " +
+                             "ORDER BY rowid DESC")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new UserRow(
+                            rs.getString("id"),
+                            rs.getString("username"),
+                            rs.getString("first_name")
+                    ));
+                }
             }
         }
         return out;

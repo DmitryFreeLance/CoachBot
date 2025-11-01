@@ -39,10 +39,11 @@ public class Db {
         try (Connection c = connect()) {
             c.setAutoCommit(false);
             try {
-                migrateUsersTable(c);     // важно сделать до первого INSERT в users
-                migrateGroupsTable(c);    // гарантируем user_id PK
+                migrateUsersTable(c);
+                migrateGroupsTable(c);
+                migrateSettingsTable(c); // ⬅ миграция settings(key,value) → settings(k,v)
 
-                // Настройки (k, v)
+                // Справочники/таблицы, которые ждут репозитории
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS settings(
                       k TEXT PRIMARY KEY,
@@ -50,7 +51,6 @@ public class Db {
                     )
                 """);
 
-                // Состояния визардов
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS user_states(
                       user_id TEXT PRIMARY KEY,
@@ -83,7 +83,6 @@ public class Db {
                     )
                 """);
 
-                // Приводим к схеме, ожидаемой NormRepo (activity_norms / water_liters / sleep_hours)
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS activity_norms(
                       user_id      TEXT NOT NULL,
@@ -114,14 +113,12 @@ public class Db {
                     )
                 """);
 
-                // Таблица для защиты от дублей обновлений — должна соответствовать UpdatesRepo
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS processed_updates(
                       update_id INTEGER PRIMARY KEY
                     )
                 """);
 
-                // Лог «что уже отправляли» — должен соответствовать SentRepo
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS sent_notifications(
                       type    TEXT NOT NULL,
@@ -138,7 +135,6 @@ public class Db {
                     )
                 """);
 
-                // Дефолт вечёрнего времени (если ещё не задано)
                 ensureDefaultSetting(c, "evening_time", "19:00");
 
                 c.commit();
@@ -170,7 +166,6 @@ public class Db {
             return;
         }
 
-        // Проверяем наличие всех нужных колонок
         boolean hasId        = tableHasColumn(c, "users", "id");
         boolean hasUsername  = tableHasColumn(c, "users", "username");
         boolean hasFirstName = tableHasColumn(c, "users", "first_name");
@@ -179,12 +174,10 @@ public class Db {
 
         if (hasId && hasUsername && hasFirstName && hasRole && hasActive) return;
 
-        // Вычислим исходную колонку для id (на старых схемах могло быть tg_id или user_id)
         boolean hasTgId   = tableHasColumn(c, "users", "tg_id");
         boolean hasUserId = tableHasColumn(c, "users", "user_id");
         String srcIdCol = hasId ? "id" : (hasTgId ? "tg_id" : (hasUserId ? "user_id" : null));
 
-        // Пересоздаём таблицу users в каноническом виде и переносим данные
         try (Statement st = c.createStatement()) {
             st.execute("""
             CREATE TABLE users_new(
@@ -227,7 +220,6 @@ public class Db {
             return;
         }
 
-        // пересоздадим таблицу в корректном виде (user_id PK), перенеся данные
         try (Statement st = c.createStatement()) {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS groups_new(
@@ -235,7 +227,6 @@ public class Db {
                   admin_id TEXT NOT NULL
                 )
             """);
-            // перенос известных схем
             if (tableHasColumn(c, "groups", "user_id") && tableHasColumn(c, "groups", "admin_id")) {
                 st.execute("INSERT OR IGNORE INTO groups_new(user_id, admin_id) SELECT user_id, admin_id FROM groups");
             } else if (tableHasColumn(c, "groups", "uid") && tableHasColumn(c, "groups", "aid")) {
@@ -243,6 +234,46 @@ public class Db {
             }
             st.execute("DROP TABLE groups");
             st.execute("ALTER TABLE groups_new RENAME TO groups");
+        }
+    }
+
+    // 🔧 миграция settings(key,value) → settings(k,v)
+    private static void migrateSettingsTable(Connection c) throws SQLException {
+        if (!tableExists(c, "settings")) {
+            try (Statement st = c.createStatement()) {
+                st.execute("""
+                    CREATE TABLE settings(
+                      k TEXT PRIMARY KEY,
+                      v TEXT
+                    )
+                """);
+            }
+            return;
+        }
+
+        boolean hasK = tableHasColumn(c, "settings", "k");
+        boolean hasV = tableHasColumn(c, "settings", "v");
+        boolean hasKey = tableHasColumn(c, "settings", "key");
+        boolean hasValue = tableHasColumn(c, "settings", "value");
+
+        if (hasK && hasV && !hasKey && !hasValue) return;
+
+        try (Statement st = c.createStatement()) {
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS settings_new(
+                  k TEXT PRIMARY KEY,
+                  v TEXT
+                )
+            """);
+
+            if (hasKey && hasValue) {
+                st.execute("INSERT OR IGNORE INTO settings_new(k, v) SELECT key, value FROM settings");
+            } else if (hasK && hasV) {
+                st.execute("INSERT OR IGNORE INTO settings_new(k, v) SELECT k, v FROM settings");
+            }
+
+            st.execute("DROP TABLE settings");
+            st.execute("ALTER TABLE settings_new RENAME TO settings");
         }
     }
 
