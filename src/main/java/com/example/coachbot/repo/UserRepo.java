@@ -4,72 +4,133 @@ import com.example.coachbot.Db;
 import com.example.coachbot.Roles;
 
 import java.sql.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UserRepo {
 
-    public static void upsertUser(String tgId, String username, String firstName) throws Exception {
+    public static class UserRow {
+        public final String id;
+        public final String username;   // @tag без @ (как в Telegram)
+        public final String firstName;  // отображаемое имя
+
+        public UserRow(String id, String username, String firstName) {
+            this.id = id;
+            this.username = username;
+            this.firstName = firstName;
+        }
+    }
+
+    public static void upsertUser(String id, String username, String firstName) throws Exception {
         try (Connection c = Db.connect();
-             PreparedStatement ps = c.prepareStatement(
-                     "INSERT INTO users(tg_id, username, first_name) VALUES(?,?,?) " +
-                             "ON CONFLICT(tg_id) DO UPDATE SET username=excluded.username, first_name=excluded.first_name")) {
-            ps.setString(1, tgId); ps.setString(2, username); ps.setString(3, firstName);
+             PreparedStatement ps = c.prepareStatement("""
+                         INSERT INTO users(id, username, first_name, role, active)
+                         VALUES(?, ?, ?, COALESCE((SELECT role FROM users WHERE id=?),'USER'), 1)
+                         ON CONFLICT(id) DO UPDATE SET
+                           username=excluded.username,
+                           first_name=excluded.first_name,
+                           active=1
+                     """)) {
+            ps.setString(1, id);
+            ps.setString(2, username);
+            ps.setString(3, firstName);
+            ps.setString(4, id);
             ps.executeUpdate();
         }
     }
 
-    public static boolean exists(String tgId) throws Exception {
-        try (Connection c = Db.connect(); PreparedStatement ps = c.prepareStatement("SELECT 1 FROM users WHERE tg_id=?")) {
-            ps.setString(1, tgId);
-            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
-        }
-    }
-
-    public static Roles role(String tgId) throws Exception {
-        try (Connection c = Db.connect(); PreparedStatement ps = c.prepareStatement("SELECT role FROM users WHERE tg_id=?")) {
-            ps.setString(1, tgId);
+    public static Roles role(String id) throws Exception {
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement("SELECT role FROM users WHERE id=?")) {
+            ps.setString(1, id);
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return Roles.valueOf(rs.getString(1));
+                if (rs.next()) {
+                    try {
+                        return Roles.valueOf(rs.getString(1));
+                    } catch (Exception ignored) {
+                    }
+                }
+                return Roles.USER;
             }
         }
-        return Roles.USER;
     }
 
-    public static void setRole(String tgId, Roles role) throws Exception {
-        try (Connection c = Db.connect(); PreparedStatement ps = c.prepareStatement("UPDATE users SET role=? WHERE tg_id=?")) {
-            ps.setString(1, role.name()); ps.setString(2, tgId); ps.executeUpdate();
+    public static void setRole(String id, Roles r) throws Exception {
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement("""
+                         INSERT INTO users(id, role, active)
+                         VALUES(?, ?, 1)
+                         ON CONFLICT(id) DO UPDATE SET role=excluded.role, active=1
+                     """)) {
+            ps.setString(1, id);
+            ps.setString(2, r.name());
+            ps.executeUpdate();
         }
     }
 
-    public static List<String> allActiveUsers() throws Exception {
-        List<String> ids = new ArrayList<>();
-        try (Connection c = Db.connect(); PreparedStatement ps = c.prepareStatement("SELECT tg_id FROM users WHERE role='USER'")) {
-            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) ids.add(rs.getString(1)); }
-        }
-        return ids;
-    }
-
-    public static List<String> allUsersPaged(int limit, int offset) throws Exception {
-        List<String> ids = new ArrayList<>();
-        try (Connection c = Db.connect(); PreparedStatement ps = c.prepareStatement("SELECT tg_id FROM users WHERE role='USER' ORDER BY added_at DESC LIMIT ? OFFSET ?")) {
-            ps.setInt(1, limit); ps.setInt(2, offset);
-            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) ids.add(rs.getString(1)); }
-        }
-        return ids;
+    public static void ensureAdmin(String id) throws Exception {
+        Roles cur = role(id);
+        if (cur != Roles.SUPERADMIN) setRole(id, Roles.ADMIN);
     }
 
     public static int countUsers() throws Exception {
-        try (Connection c = Db.connect(); PreparedStatement ps = c.prepareStatement("SELECT count(*) FROM users WHERE role='USER'")) {
-            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM users WHERE active=1")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
         }
     }
 
-    public static void ensureAdmin(String tgId) throws Exception {
-        if (!exists(tgId)) {
-            try (Connection c = Db.connect();
-                 PreparedStatement ps = c.prepareStatement("INSERT INTO users(tg_id, role) VALUES(?, 'ADMIN')")) {
-                ps.setString(1, tgId); ps.executeUpdate();
+    /**
+     * Старый метод (если где-то используется) — только id
+     */
+    public static List<String> allUsersPaged(int limit, int offset) throws Exception {
+        List<String> out = new ArrayList<>();
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT id FROM users WHERE active=1 ORDER BY rowid ASC LIMIT ? OFFSET ?")) {
+            ps.setInt(1, Math.max(1, limit));
+            ps.setInt(2, Math.max(0, offset));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
             }
-        } else setRole(tgId, Roles.ADMIN);
+        }
+        return out;
+    }
+
+    /**
+     * Новый детальный метод — для красивого списка: {first_name} | @username | tg_id
+     */
+    public static List<UserRow> allUsersPagedDetailed(int limit, int offset) throws Exception {
+        List<UserRow> out = new ArrayList<>();
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT id, username, first_name FROM users WHERE active=1 ORDER BY rowid ASC LIMIT ? OFFSET ?")) {
+            ps.setInt(1, Math.max(1, limit));
+            ps.setInt(2, Math.max(0, offset));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new UserRow(
+                            rs.getString("id"),
+                            rs.getString("username"),
+                            rs.getString("first_name")
+                    ));
+                }
+            }
+        }
+        return out;
+    }
+
+    public static List<String> allActiveUsers() throws Exception {
+        List<String> out = new ArrayList<>();
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT id FROM users WHERE active=1 AND (role IS NULL OR role='USER') ORDER BY rowid ASC")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
+            }
+        }
+        return out;
     }
 }

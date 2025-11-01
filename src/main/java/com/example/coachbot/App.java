@@ -32,7 +32,7 @@ public class App {
         System.out.printf("Starting CoachBot… tz=%s db=%s superAdmins=%s%n", tz, dbPath, superAdmins);
 
         // Инициализация БД и служебных таблиц/настроек (внутри Db.init добавь OutboxRepo.init(), CommandGuardRepo.init(), и т.п.)
-        Db.init(dbPath, tz, superAdmins);
+        Db.init();
 
         // Регистрация бота
         TelegramBotsApi api = new TelegramBotsApi(DefaultBotSession.class);

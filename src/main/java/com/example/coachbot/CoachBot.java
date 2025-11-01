@@ -54,7 +54,7 @@ public class CoachBot extends TelegramLongPollingBot {
     }
 
     public void safeExecute(SendMessage sm) {
-        try { execute(sm); } catch (Exception ignored) {}
+        try { execute(sm); } catch (Exception e) { e.printStackTrace(); }
     }
 
     @Override
@@ -345,6 +345,9 @@ public class CoachBot extends TelegramLongPollingBot {
         String tgId = String.valueOf(cq.getFrom().getId());
         long chatId = cq.getMessage().getChatId();
 
+        // мгновенно убираем "часики" на любой клик
+        try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build()); } catch (Exception ignored) {}
+
         // Если идёт ввод контактов — блокируем любые кнопки, кроме "contact:cancel"
         var st = StateRepo.get(tgId);
         if (st != null && "CONTACT".equals(st.type())) {
@@ -354,7 +357,6 @@ public class CoachBot extends TelegramLongPollingBot {
                 SendMessage panel = md(chatId, Texts.adminTitle());
                 panel.setReplyMarkup(Keyboards.adminPanel(isSuper(tgId)));
                 safeExecute(panel);
-                execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
                 return;
             } else {
                 execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Сначала завершите ввод контактов или отмените.").showAlert(true).build());
@@ -367,7 +369,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, Texts.start(cq.getFrom().getFirstName()));
             sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -376,7 +377,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = new SendMessage(String.valueOf(chatId), msg);
             sm.setReplyMarkup(Keyboards.backToMenu());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -385,7 +385,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = new SendMessage(String.valueOf(chatId), msg);
             sm.setReplyMarkup(Keyboards.backToMenu());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -394,7 +393,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = new SendMessage(String.valueOf(chatId), msg);
             sm.setReplyMarkup(Keyboards.backToMenu());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -408,13 +406,11 @@ public class CoachBot extends TelegramLongPollingBot {
             }
             sm.setReplyMarkup(Keyboards.backToMenu());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
         if ("menu:report".equals(data)) {
             safeExecute(ReportWizard.start(tgId, chatId));
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -424,7 +420,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, Texts.adminTitle());
             sm.setReplyMarkup(Keyboards.adminPanel(isSuper(tgId)));
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -439,24 +434,20 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, ids.isEmpty() ? "В вашей группе пока нет пользователей." : sb.toString());
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
-        // Все пользователи — последняя страница (новые сверху) + в том же сообщении "назад в админ-панель"
-        if ("admin:all".equals(data)) {
+        // Все пользователи — поддерживаем несколько вариантов callback-данных
+        if ("admin:all".equals(data) || "admin:allusers".equals(data) || "admin:users".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(md(chatId, "Только для админов.")); return; }
             renderAllUsers(chatId, /*page*/-1); // -1 = последняя
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
         // Пагинация "Все пользователи"
         if (data.startsWith("allusers:")) {
-            String pageStr = data.substring("allusers:".length());
-            int page = Integer.parseInt(pageStr);
+            int page = Integer.parseInt(data.substring("allusers:".length()));
             renderAllUsers(chatId, page);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -467,7 +458,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, "Введите *tg_id* пользователя:");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -478,7 +468,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, "Введите *tg_id* пользователя:");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -489,7 +478,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, "Введите *tg_id* пользователя:");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -499,7 +487,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = ContactWizard.start(tgId, chatId);
             sm.setReplyMarkup(Keyboards.contactCancelOnly());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -510,7 +497,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, "Введите время в формате `HH:mm` (Екатеринбург):");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -521,7 +507,6 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, "Введите *tg_id* пользователя для назначения администратором:");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
@@ -532,19 +517,25 @@ public class CoachBot extends TelegramLongPollingBot {
             SendMessage sm = md(chatId, "Введите *tg_id* администратора для снятия прав:");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
         // отчёт: отмена и старт
         if ("report:cancel".equals(data)) {
             safeExecute(ReportWizard.cancel(String.valueOf(cq.getFrom().getId()), chatId));
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build());
+            try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build()); } catch (Exception ignored) {}
             return;
         }
         if ("report:start".equals(data)) {
             safeExecute(ReportWizard.start(String.valueOf(cq.getFrom().getId()), chatId));
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
+            return;
+        }
+
+        // ✅ Завершить план — ДОБАВЛЕНО
+        if ("plan:finish".equals(data)) {
+            if (!isAdmin(tgId)) { safeExecute(md(chatId, "Только для админов.")); return; }
+            SendMessage sm = PlanWizard.onFinish(tgId, chatId);
+            if (sm != null) safeExecute(sm);
             return;
         }
 
@@ -555,36 +546,50 @@ public class CoachBot extends TelegramLongPollingBot {
             int page = Integer.parseInt(p[2]);
             boolean desc = "desc".equals(p[3]);
             sendReportsPage(tgId, chatId, uid, page, desc);
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
 
         // "заглушка" кнопки
         if ("noop".equals(data)) {
-            execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             return;
         }
-
-        // default
-        execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
     }
 
-    // Рендер списка пользователей с нашей клавиатурой пагинации + "назад в админ-панель"
-    private void renderAllUsers(long chatId, int pageRequested) throws Exception {
-        int size = 20;
-        int total = UserRepo.countUsers();
-        int pages = Math.max(1,(int)Math.ceil(total/(double)size));
-        int page = pageRequested == -1 ? pages : Math.min(Math.max(1,pageRequested), pages);
-        int offset = (page-1)*size;
-        var ids = UserRepo.allUsersPaged(size, offset);
+    // Рендер списка пользователей с клавиатурой пагинации + "назад в админ-панель"
+    // ВАЖНО: без Markdown, чтобы @username_c_underscores не ломали разметку
+    private void renderAllUsers(long chatId, int pageRequested) {
+        try {
+            int size = 20;
+            int total = UserRepo.countUsers();
+            if (total <= 0) {
+                SendMessage empty = md(chatId, "Активных пользователей пока нет.");
+                empty.setReplyMarkup(Keyboards.backToAdmin());
+                safeExecute(empty);
+                return;
+            }
+            int pages = Math.max(1,(int)Math.ceil(total/(double)size));
+            int page = pageRequested == -1 ? pages : Math.min(Math.max(1,pageRequested), pages);
+            int offset = (page-1)*size;
 
-        StringBuilder sb = new StringBuilder("Активные пользователи (стр. "+page+"/"+pages+"):\n");
-        int i = offset+1;
-        for (String id : ids) sb.append(i++).append(". ").append(mention(id)).append("  tg_id: ").append(id).append("\n");
+            var rows = UserRepo.allUsersPagedDetailed(size, offset);
+            StringBuilder sb = new StringBuilder("Активные пользователи (стр. "+page+"/"+pages+"):\n");
+            int i = offset + 1;
+            for (UserRepo.UserRow r : rows) {
+                String name = (r.firstName != null && !r.firstName.isBlank()) ? r.firstName : "—";
+                String tag  = (r.username  != null && !r.username.isBlank())  ? "@"+r.username : "—";
+                sb.append(i++).append(". ").append(name).append(" | ").append(tag).append(" | ").append(r.id).append("\n");
+            }
 
-        SendMessage sm = md(chatId, sb.toString());
-        sm.setReplyMarkup(Keyboards.allUsersPager(page, pages));
-        safeExecute(sm);
+            // Отправляем БЕЗ Markdown
+            SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
+            sm.setReplyMarkup(Keyboards.allUsersPager(page, pages)); // включает "вернуться в админ-панель"
+            safeExecute(sm);
+        } catch (Exception e) {
+            // Покажем ошибку в чате, чтобы было видно, что происходит
+            SendMessage err = md(chatId, "Не удалось загрузить список пользователей: " + e.getMessage());
+            err.setReplyMarkup(Keyboards.backToAdmin());
+            safeExecute(err);
+        }
     }
 
     private void sendReportsPage(String adminId, long chatId, String userId, int page, boolean desc) throws Exception {
