@@ -21,34 +21,60 @@ import java.util.StringJoiner;
 public class CoachBot extends TelegramLongPollingBot {
 
     private final String username;
+
     public CoachBot(String username, String token) {
         super(token);
         this.username = username;
     }
-    @Override public String getBotUsername() { return username; }
 
-    // ===== helpers =====
+    @Override
+    public String getBotUsername() { return username; }
+
+    /* ===================== helpers ===================== */
+
     private static SendMessage md(long chatId, String text) {
         SendMessage sm = new SendMessage(String.valueOf(chatId), text);
         sm.setParseMode(ParseMode.MARKDOWN);
         return sm;
     }
+
     private static Integer parseInt(String s) {
         if (s == null) return null;
         try { return Integer.parseInt(s.trim().replace(" ", "")); }
         catch (Exception e) { return null; }
     }
+
     public void safeExecute(SendMessage sm) {
         try { execute(sm); } catch (Exception e) { e.printStackTrace(); }
     }
     public void safeExecute(SendPhoto sp) {
         try { execute(sp); } catch (Exception e) { e.printStackTrace(); }
     }
+
     private boolean isAdmin(String tgId) throws Exception {
         Roles r = UserRepo.role(tgId);
         return r == Roles.ADMIN || r == Roles.SUPERADMIN;
     }
-    private boolean isSuper(String tgId) throws Exception { return UserRepo.role(tgId) == Roles.SUPERADMIN; }
+    private boolean isSuper(String tgId) throws Exception {
+        return UserRepo.role(tgId) == Roles.SUPERADMIN;
+    }
+
+    private boolean isInSuperAdmins(String id) {
+        String prop = System.getProperty("super.admins", "");
+        if (prop == null || prop.isBlank()) return false;
+        String[] parts = prop.split("[,\\s]+");
+        for (String p : parts) {
+            if (!p.isBlank() && p.equals(id)) return true;
+        }
+        return false;
+    }
+    private void applyAutoSuper(String tgId) {
+        try {
+            if (isInSuperAdmins(tgId)) {
+                UserRepo.setRole(tgId, Roles.SUPERADMIN);
+            }
+        } catch (Exception ignored) {}
+    }
 
     private static String helpText() {
         return """
@@ -58,7 +84,7 @@ public class CoachBot extends TelegramLongPollingBot {
 • 🍽 *План питания* — смотри запланированные калории и БЖУ на сегодня.  
 • 🏋️ *Тренировка* — список упражнений с галочками.  
 • 📊 *Нормы активности* — вода, шаги и сон на день.  
-• 📝 *Отчёт* — заполни дневной отчёт: сон → шаги → вода → КБЖУ (одним сообщением или скриншотом).  
+• 📝 *Отчёт* — заполни дневной отчёт: сон → шаги → вода → КБЖУ.  
 • 📞 *Контакты* — контакты твоего тренера.
 
 *2) Ежедневные напоминания*  
@@ -81,13 +107,14 @@ public class CoachBot extends TelegramLongPollingBot {
         SendPhoto sp = new SendPhoto();
         sp.setChatId(String.valueOf(chatId));
         sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("3.png")));
-        sp.setCaption(Texts.start(firstName)); // caption с Markdown
+        sp.setCaption(Texts.start(firstName)); // текст приветствия в caption
         sp.setParseMode(ParseMode.MARKDOWN);
         sp.setReplyMarkup(Keyboards.inlineMainMenu(isAdminFlag, isSuperFlag));
         safeExecute(sp);
     }
 
-    // ===== main =====
+    /* ===================== main ===================== */
+
     @Override
     public void onUpdateReceived(Update update) {
         try {
@@ -104,6 +131,7 @@ public class CoachBot extends TelegramLongPollingBot {
     private void handleMessage(Message m) throws Exception {
         String tgId = String.valueOf(m.getFrom().getId());
         UserRepo.upsertUser(tgId, m.getFrom().getUserName(), m.getFrom().getFirstName());
+        applyAutoSuper(tgId); // автоповышение SUPERADMIN по SUPERADMINS
 
         String text = m.hasText() ? m.getText().trim() : "";
 
@@ -111,7 +139,7 @@ public class CoachBot extends TelegramLongPollingBot {
         if (text.startsWith("/start") || text.startsWith("/admin")) {
             StateRepo.clear(tgId); // всегда выходим из любых визардов
             if (text.startsWith("/start")) {
-                // Приветствие одной фотокапцией с 3.png
+                // Приветствие: одно сообщение с фото 3.png + текст
                 sendStartPhoto(m.getChatId(), m.getFrom().getFirstName(), isAdmin(tgId), isSuper(tgId));
                 return;
             }
@@ -392,7 +420,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 return;
             }
 
-            // Обработка визардов (рабочие шаги, пока админ вводит значения)
+            // Рабочие шаги визардов
             switch (stAdmin.type()) {
                 case "SET_CAL" -> { var sm = CaloriesWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
                 case "SET_PLAN" -> { var sm = PlanWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
@@ -436,6 +464,7 @@ public class CoachBot extends TelegramLongPollingBot {
             default -> false;
         };
     }
+
     private boolean adminWizardAllows(String type, String data) {
         // Разрешаем выход в любое время
         if (data.equals("menu:main") || data.equals("menu:admin")) return true;
@@ -455,6 +484,7 @@ public class CoachBot extends TelegramLongPollingBot {
             default -> true;
         };
     }
+
     private void warnAdminBusy(long chatId, String type) {
         SendMessage sm = new SendMessage(String.valueOf(chatId),
                 "Вы в процессе админ-действия. Завершите текущий шаг или вернитесь в админ-панель.");
@@ -468,12 +498,14 @@ public class CoachBot extends TelegramLongPollingBot {
         String tgId = String.valueOf(cq.getFrom().getId());
         long chatId = cq.getMessage().getChatId();
 
+        applyAutoSuper(tgId); // автоповышение и по callback-ам
+
         try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build()); } catch (Exception ignored) {}
 
-        // ===== Разрешаем мгновенный выход из любых визардов =====
+        // ===== быстрый выход в меню =====
         if (data.equals("menu:main")) {
             StateRepo.clear(tgId); // чистим состояние
-            // Здесь — без фото, чтобы избежать "двойного /start"
+            // текст без фото (чтобы избежать «двойного /start»)
             SendMessage sm = md(chatId, Texts.start(cq.getFrom().getFirstName()));
             sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
             safeExecute(sm);
@@ -481,14 +513,14 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         if (data.equals("menu:admin")) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Команда только для админов.")); return; }
-            StateRepo.clear(tgId); // чистим состояние визардов при входе в админку
+            StateRepo.clear(tgId); // при входе в админку чистим состояние
             SendMessage sm = md(chatId, Texts.adminTitle());
             sm.setReplyMarkup(Keyboards.adminPanel(isSuper(tgId)));
             safeExecute(sm);
             return;
         }
 
-        // ===== Жёсткая блокировка во время отчёта =====
+        // ===== блокировка во время отчёта =====
         var stUser = StateRepo.get(tgId);
         if (stUser != null && "REPORT".equals(stUser.type())) {
             if (!"report:cancel".equals(data)) {
@@ -500,7 +532,7 @@ public class CoachBot extends TelegramLongPollingBot {
             }
         }
 
-        // ===== Жёсткая блокировка для админ-визардов (с учётом наших послаблений выше) =====
+        // ===== защита во время админ-визардов (с нашими послаблениями) =====
         var stAdmin = StateRepo.get(tgId);
         if (stAdmin != null && isAdminWizard(stAdmin.type())) {
             if (!adminWizardAllows(stAdmin.type(), data)) {
@@ -509,6 +541,7 @@ public class CoachBot extends TelegramLongPollingBot {
             }
         }
 
+        // меню пользователя
         if ("menu:food".equals(data)) {
             String msg = PlanRepo.getNutritionText(tgId, TimeUtil.today());
             SendMessage sm = new SendMessage(String.valueOf(chatId), msg);
