@@ -43,8 +43,8 @@ public class Db {
                 migrateUsersTable(c);
                 migrateGroupsTable(c);
                 migrateSettingsTable(c);       // k/v -> key/value
-                migrateReportsTable(c);        // гарантирует полноценную схему reports
-                migrateNormsTables(c);         // создаст activity_norms и перенесёт из norms при наличии
+                migrateReportsTable(c);        // полноценная схема reports
+                migrateNormsTables(c);         // создаёт activity_norms и переносит из norms при наличии
 
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS nutrition_plans(
@@ -69,8 +69,9 @@ public class Db {
                     )
                 """);
 
+                // Антидубли апдейтов (таблица, в которую пишет UpdatesRepo)
                 createIfMissing(c, """
-                    CREATE TABLE IF NOT EXISTS updates_guard(
+                    CREATE TABLE IF NOT EXISTS processed_updates(
                       update_id INTEGER PRIMARY KEY
                     )
                 """);
@@ -90,6 +91,19 @@ public class Db {
                       text     TEXT
                     )
                 """);
+
+                // Таблица для состояний визардов (исправление п.3)
+                createIfMissing(c, """
+                    CREATE TABLE IF NOT EXISTS user_states(
+                      user_id TEXT PRIMARY KEY,
+                      type    TEXT,
+                      step    INTEGER,
+                      payload TEXT
+                    )
+                """);
+
+                // Индекс на группы по администратору — полезен при росте данных
+                createIfMissing(c, "CREATE INDEX IF NOT EXISTS idx_groups_admin ON groups(admin_id)");
 
                 ensureDefaultSetting(c, "evening_time", "19:00");
 
@@ -122,7 +136,6 @@ public class Db {
             return;
         }
 
-        // Проверяем наличие всех нужных колонок
         boolean hasId        = tableHasColumn(c, "users", "id");
         boolean hasUsername  = tableHasColumn(c, "users", "username");
         boolean hasFirstName = tableHasColumn(c, "users", "first_name");
@@ -208,12 +221,10 @@ public class Db {
             }
             return;
         }
-        // если уже key/value — выходим
         boolean hasKey = tableHasColumn(c, "settings", "key");
         boolean hasValue = tableHasColumn(c, "settings", "value");
         if (hasKey && hasValue) return;
 
-        // старая таблица могла быть k/v
         boolean hasK = tableHasColumn(c, "settings", "k");
         boolean hasV = tableHasColumn(c, "settings", "v");
 
@@ -258,7 +269,6 @@ public class Db {
             return;
         }
 
-        // Проверим наличие обязательных колонок
         String[] required = {"user_id","date","sleep","steps","water","kcal","p","f","c","note","photo_id","created_at"};
         boolean ok = true;
         for (String col : required) if (!tableHasColumn(c, "reports", col)) { ok = false; break; }
@@ -283,7 +293,6 @@ public class Db {
                 )
             """);
 
-            // перенос данных по тем полям, что существуют
             String selSleep = tableHasColumn(c,"reports","sleep") ? "sleep" : "NULL";
             String selSteps = tableHasColumn(c,"reports","steps") ? "steps" : "NULL";
             String selWater = tableHasColumn(c,"reports","water") ? "water" : "NULL";
@@ -306,11 +315,10 @@ public class Db {
 
     // нормы: целевая таблица activity_norms; перенос из старой norms, если была
     private static void migrateNormsTables(Connection c) throws SQLException {
-        // целевая
         createIfMissing(c, """
             CREATE TABLE IF NOT EXISTS activity_norms(
-              user_id     TEXT NOT NULL,
-              date        TEXT NOT NULL,
+              user_id      TEXT NOT NULL,
+              date         TEXT NOT NULL,
               water_liters REAL,
               steps        INTEGER,
               sleep_hours  REAL,
@@ -319,7 +327,6 @@ public class Db {
             )
         """);
 
-        // если есть старая norms — пытаемся перенести
         if (tableExists(c, "norms")) {
             boolean hasUser = tableHasColumn(c,"norms","user_id");
             boolean hasDate = tableHasColumn(c,"norms","date");
@@ -337,7 +344,6 @@ public class Db {
                             "SELECT user_id,date,"+w+","+s+","+sl+","+by+" FROM norms");
                 } catch (SQLException ignored) {}
             }
-            // оставляем старую norms как есть (без дропа) — безопаснее для отката
         }
     }
 

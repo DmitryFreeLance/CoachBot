@@ -5,10 +5,11 @@ import com.example.coachbot.repo.*;
 import com.example.coachbot.TimeUtil;
 import com.example.coachbot.Texts;
 import com.example.coachbot.Emojis;
-import com.example.coachbot.Db;
 
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 
+import java.io.File;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.*;
@@ -23,37 +24,62 @@ public class DailyScheduler {
         ses.scheduleAtFixedRate(this::tick, 3, 30, TimeUnit.SECONDS);
     }
 
+    private static String trimCaption(String s) {
+        if (s == null) return "";
+        int max = 1000; // запас к лимиту Telegram (1024)
+        if (s.length() <= max) return s;
+        return s.substring(0, Math.max(0, max - 1)) + "…";
+    }
+
     private void tick() {
         try {
             String eve = SettingsRepo.get("evening_time", "19:00");
             LocalDate today = TimeUtil.today();
 
-            // 08:00 — сценарий на сегодня
+            // 08:00 — сценарий на сегодня (одно сообщение с фото 4.png)
             if (TimeUtil.isNow("08:00")) {
                 List<String> users = UserRepo.allActiveUsers();
                 for (String uid : users) {
                     if (!SentRepo.notSentYet("morning", uid, today)) continue;
+
                     String food = PlanRepo.getNutritionText(uid, today);
-                    String wkt = PlanRepo.getWorkoutText(uid, today);
+                    String wkt  = PlanRepo.getWorkoutText(uid, today);
                     String norm = NormRepo.getNormsText(uid, today);
+
                     String msg = Texts.morningScenarioTitle() + "\n\n"
                             + "🍽 План питания:\n" + food + "\n\n"
                             + "🏋️ Тренировка:\n" + wkt + "\n\n"
                             + "📊 Нормы активности:\n" + norm + "\n\n"
-                            + Emojis.TARGET + " Каждая тренировка приближает вас к цели! " + Emojis.MUSCLE;
-                    bot.safeExecute(new SendMessage(uid, msg));
+                            + "не забудьте заполнить дневной отчёт 📝";
+
+                    SendPhoto sp = new SendPhoto();
+                    sp.setChatId(uid);
+                    sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("4.png")));
+                    sp.setCaption(trimCaption(msg));
+
+                    bot.safeExecute(sp);
                     SentRepo.markSent("morning", uid, today);
                 }
             }
 
-            // Вечерняя рассылка
+            // Вечерняя рассылка ТОЛЬКО если отчёта ещё нет; одно сообщение с фото 2.jpg
             if (TimeUtil.isNow(eve)) {
                 List<String> users = UserRepo.allActiveUsers();
                 for (String uid : users) {
                     if (!SentRepo.notSentYet("evening", uid, today)) continue;
-                    SendMessage sm = new SendMessage(uid, Texts.eveningBroadcast());
-                    sm.setReplyMarkup(com.example.coachbot.Keyboards.reportButton());
-                    bot.safeExecute(sm);
+                    if (ReportRepo.existsFor(uid, today)) continue; // отправляем только тем, у кого нет отчёта
+
+                    String msg = Emojis.SUNSET + " Добрый вечер!\n"
+                            + "Вы не загрузили отчет за сегодня.\n"
+                            + "Пожалуйста, нажмите кнопку ниже, чтобы отправить дневной отчёт. " + Emojis.MUSCLE;
+
+                    SendPhoto sp = new SendPhoto();
+                    sp.setChatId(uid);
+                    sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("2.jpg")));
+                    sp.setCaption(trimCaption(msg));
+                    sp.setReplyMarkup(com.example.coachbot.Keyboards.reportButton());
+
+                    bot.safeExecute(sp);
                     SentRepo.markSent("evening", uid, today);
                 }
             }
