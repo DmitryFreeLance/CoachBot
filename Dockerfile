@@ -3,27 +3,35 @@ FROM maven:3.9-amazoncorretto-21 AS build
 
 WORKDIR /app
 COPY pom.xml .
-# ускорит последующие сборки (кэш зависимостей)
+# кэш зависимостей (ускоряет последующие сборки)
 RUN mvn -q -DskipTests dependency:go-offline
 
 COPY src ./src
 RUN mvn -q clean package -DskipTests
 
+# НОРМАЛИЗУЕМ имя артефакта -> /app/app.jar
+# Возьмём первый jar из target/ (подходит и для coachbot-1.0.0.jar, и для *-shaded.jar)
+RUN set -eux; \
+    ls -l target; \
+    JAR="$(ls target/*.jar | head -n1)"; \
+    cp "$JAR" /app/app.jar; \
+    ls -l /app/app.jar
+
 # ===== runtime =====
 FROM openjdk:21-jdk-slim
 
 WORKDIR /app
-# забираем "толстый" jar, который делает maven-shade-plugin
-COPY --from=build /app/target/*-shaded.jar /app/app.jar
 
-# картинки нужны в рабочей папке /app
+# кладём итоговый jar
+COPY --from=build /app/app.jar /app/app.jar
+
+# кладём изображения рядом (бот читает "3.png", "4.png", "2.jpg" из /app)
 COPY 2.jpg 3.png 4.png /app/
 
-# SQLite сохраняем в /app/data (смонтируем как volume)
+# каталог под SQLite
 RUN mkdir -p /app/data
 
 ENV TZ=Asia/Yekaterinburg
-# EXPOSE не обязателен для long-polling, можно пропустить
-# EXPOSE 8080
+# EXPOSE 8080  # long-polling, порт не обязателен
 
 ENTRYPOINT ["java","-jar","/app/app.jar"]
