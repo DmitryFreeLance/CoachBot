@@ -8,7 +8,7 @@ import java.util.List;
 
 public class Keyboards {
 
-    // Главное меню
+    // Главное меню: КАЖДАЯ кнопка в отдельном ряду. БЕЗ "Админ-панель"
     public static InlineKeyboardMarkup inlineMainMenu(boolean isAdmin, boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("🍽 План питания", "menu:food")));
@@ -16,38 +16,49 @@ public class Keyboards {
         rows.add(List.of(btn("📊 Нормы активности", "menu:norms")));
         rows.add(List.of(btn("📝 Отчёт", "menu:report")));
         rows.add(List.of(btn("📞 Контакты", "menu:contact")));
+        // ВАЖНО: кнопку "Админ-панель" осознанно НЕ добавляем сюда.
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;
     }
 
+    // Назад в главное меню
     public static InlineKeyboardMarkup backToMenu() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(List.of(btn("🔙 Вернуться в меню", "menu:main"))));
+        m.setKeyboard(List.of(
+                List.of(btn("🔙 Вернуться в меню", "menu:main"))
+        ));
         return m;
     }
 
+    // Назад в админ-панель
     public static InlineKeyboardMarkup backToAdmin() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin"))));
+        m.setKeyboard(List.of(
+                List.of(btn("🔙 Вернуться в админ-панель", "menu:admin"))
+        ));
         return m;
     }
 
-    // Контакты: только отмена
+    // Для ввода контактов: только отмена (жёсткий режим)
     public static InlineKeyboardMarkup contactCancelOnly() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(List.of(btn("✖️ Отменить ввод", "contact:cancel"))));
+        m.setKeyboard(List.of(
+                List.of(btn("✖️ Отменить ввод", "contact:cancel"))
+        ));
         return m;
     }
 
-    // Отчёт: только «Отменить заполнение»
+    // Отчёт: только отмена
     public static InlineKeyboardMarkup reportCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(List.of(btn("✖️ Отменить заполнение", "report:cancel"))));
+        m.setKeyboard(List.of(
+                List.of(btn("✖️ Отменить заполнение", "report:cancel"))
+        ));
         return m;
     }
 
-    // Завершить план + назад в меню
+    // Завершить план + назад в меню (каждая в своём ряду)
     public static InlineKeyboardMarkup planFinalizeButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -57,7 +68,7 @@ public class Keyboards {
         return m;
     }
 
-    // Админ-панель
+    // Админ-панель (сам раздел): все кнопки, каждая в своём ряду
     public static InlineKeyboardMarkup adminPanel(boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("👥 Моя группа", "admin:my")));
@@ -78,6 +89,21 @@ public class Keyboards {
         return m;
     }
 
+    // Универсальный пейджер: ⬅️ 📄 ➡️ + «Назад в админ-панель»
+    public static InlineKeyboardMarkup pager(String base, int page, int pages) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        List<InlineKeyboardButton> nav = new ArrayList<>();
+        nav.add(btn("⬅️", base + ":" + Math.max(1, page - 1)));
+        nav.add(btn("📄 " + page + "/" + pages, "noop"));
+        nav.add(btn("➡️", base + ":" + Math.min(pages, page + 1)));
+        rows.add(nav);
+        rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(rows);
+        return m;
+    }
+
+    // Вечерняя рассылка: начать отчёт + назад в меню
     public static InlineKeyboardMarkup reportButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -87,29 +113,7 @@ public class Keyboards {
         return m;
     }
 
-    /**
-     * Универсальная пагинация — ВСЕГДА 3 кнопки:
-     * ⬅️ (или noop), 🔢 page/pages, ➡️ (или noop)
-     */
-    public static InlineKeyboardMarkup pager(String base, int page, int pages) {
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
-        int prev = Math.max(1, page - 1);
-        int next = Math.min(pages, page + 1);
-
-        List<InlineKeyboardButton> nav = new ArrayList<>();
-        nav.add(btn("⬅️", (page > 1) ? (base + ":" + prev) : "noop"));
-        nav.add(btn("🔢 " + page + "/" + pages, "noop"));
-        nav.add(btn("➡️", (page < pages) ? (base + ":" + next) : "noop"));
-        rows.add(nav);
-
-        rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
-
-        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(rows);
-        return m;
-    }
-
+    // утилита
     private static InlineKeyboardButton btn(String text, String cb) {
         InlineKeyboardButton b = new InlineKeyboardButton();
         b.setText(text);
