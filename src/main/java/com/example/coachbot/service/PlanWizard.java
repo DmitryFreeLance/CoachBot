@@ -1,7 +1,7 @@
 package com.example.coachbot.service;
 
-import com.example.coachbot.repo.PlanRepo;
 import com.example.coachbot.repo.StateRepo;
+import com.example.coachbot.repo.PlanRepo;
 import com.example.coachbot.TimeUtil;
 import com.example.coachbot.Keyboards;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
@@ -11,10 +11,9 @@ import java.time.LocalDate;
 
 public class PlanWizard {
 
-    // Хелпер для Markdown-сообщений
     private static SendMessage md(long chatId, String text) {
         SendMessage sm = new SendMessage(String.valueOf(chatId), text);
-        sm.setParseMode(ParseMode.MARKDOWN); // при необходимости можно сменить на "MarkdownV2"
+        sm.setParseMode(ParseMode.MARKDOWN);
         return sm;
     }
 
@@ -40,7 +39,10 @@ public class PlanWizard {
         LocalDate date = LocalDate.parse(p[1]);
 
         PlanRepo.addWorkoutLine(userId, date, text.trim(), adminId);
-        return new SendMessage(String.valueOf(chatId), "Добавлено. Следующее упражнение или нажмите «Установить план».");
+
+        SendMessage sm = new SendMessage(String.valueOf(chatId), "Добавлено. Следующее упражнение или нажмите «Установить план».");
+        sm.setReplyMarkup(Keyboards.planFinalizeButton()); // ВАЖНО: в каждом сообщении до завершения
+        return sm;
     }
 
     public static SendMessage onFinish(String adminId, long chatId) throws Exception {
@@ -52,6 +54,8 @@ public class PlanWizard {
         LocalDate date = LocalDate.parse(p[1]);
 
         StateRepo.clear(adminId);
-        return new SendMessage(String.valueOf(chatId), "План тренировки на " + TimeUtil.DATE_FMT.format(date) + " установлен.");
+        SendMessage sm = new SendMessage(String.valueOf(chatId), "План тренировки на " + TimeUtil.DATE_FMT.format(date) + " установлен.");
+        sm.setReplyMarkup(Keyboards.backToAdmin());
+        return sm;
     }
 }

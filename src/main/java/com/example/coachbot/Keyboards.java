@@ -3,12 +3,13 @@ package com.example.coachbot;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 public class Keyboards {
 
-    // Главное меню: КАЖДАЯ кнопка в отдельном ряду. БЕЗ "Админ-панель"
+    // Главное меню: без "Админ-панель"
     public static InlineKeyboardMarkup inlineMainMenu(boolean isAdmin, boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("🍽 План питания", "menu:food")));
@@ -16,49 +17,38 @@ public class Keyboards {
         rows.add(List.of(btn("📊 Нормы активности", "menu:norms")));
         rows.add(List.of(btn("📝 Отчёт", "menu:report")));
         rows.add(List.of(btn("📞 Контакты", "menu:contact")));
-        // ВАЖНО: кнопку "Админ-панель" осознанно НЕ добавляем сюда.
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;
     }
 
-    // Назад в главное меню
     public static InlineKeyboardMarkup backToMenu() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(
-                List.of(btn("🔙 Вернуться в меню", "menu:main"))
-        ));
+        m.setKeyboard(List.of(List.of(btn("🔙 Вернуться в меню", "menu:main"))));
         return m;
     }
 
-    // Назад в админ-панель
     public static InlineKeyboardMarkup backToAdmin() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(
-                List.of(btn("🔙 Вернуться в админ-панель", "menu:admin"))
-        ));
+        m.setKeyboard(List.of(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin"))));
         return m;
     }
 
-    // Для ввода контактов: только отмена (жёсткий режим)
+    // Для ввода контактов: только отмена
     public static InlineKeyboardMarkup contactCancelOnly() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(
-                List.of(btn("✖️ Отменить ввод", "contact:cancel"))
-        ));
+        m.setKeyboard(List.of(List.of(btn("✖️ Отменить ввод", "contact:cancel"))));
         return m;
     }
 
-    // Отчёт: только отмена
+    // Отчёт: только отмена (по требованию)
     public static InlineKeyboardMarkup reportCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(
-                List.of(btn("✖️ Отменить заполнение", "report:cancel"))
-        ));
+        m.setKeyboard(List.of(List.of(btn("✖️ Отменить заполнение", "report:cancel"))));
         return m;
     }
 
-    // Завершить план + назад в меню (каждая в своём ряду)
+    // План: завершить + назад в меню — должны быть в каждом сообщении визарда
     public static InlineKeyboardMarkup planFinalizeButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -68,7 +58,7 @@ public class Keyboards {
         return m;
     }
 
-    // Админ-панель (сам раздел): все кнопки, каждая в своём ряду
+    // Админ-панель
     public static InlineKeyboardMarkup adminPanel(boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("👥 Моя группа", "admin:my")));
@@ -89,7 +79,7 @@ public class Keyboards {
         return m;
     }
 
-    // Универсальный пейджер: ⬅️ 📄 ➡️ + «Назад в админ-панель»
+    // Универсальный пейджер: ⬅️ 📄 ➡️ + "Назад в админ-панель"
     public static InlineKeyboardMarkup pager(String base, int page, int pages) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         List<InlineKeyboardButton> nav = new ArrayList<>();
@@ -103,7 +93,21 @@ public class Keyboards {
         return m;
     }
 
-    // Вечерняя рассылка: начать отчёт + назад в меню
+    // Быстрый выбор даты для админ-визардов
+    // base = "date:setcal" | "date:setplan" | "date:setnorm"
+    public static InlineKeyboardMarkup dateQuickPick(String base, LocalDate today) {
+        InlineKeyboardButton b1 = btn("Сегодня", base + ":today");
+        InlineKeyboardButton b2 = btn("Завтра",  base + ":tomorrow");
+        InlineKeyboardButton b3 = btn("Послезавтра", base + ":aftertomorrow");
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(b1, b2, b3));
+        rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+        m.setKeyboard(rows);
+        return m;
+    }
+
+    // Вечерняя рассылка
     public static InlineKeyboardMarkup reportButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(

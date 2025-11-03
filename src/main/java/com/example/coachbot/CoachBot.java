@@ -92,13 +92,12 @@ public class CoachBot extends TelegramLongPollingBot {
 
         String text = m.hasText() ? m.getText().trim() : "";
 
-        // === ГЛОБАЛЬНЫЙ СБРОС ПО /start И /admin ===
+        // === /start и /admin ===
         if (text.startsWith("/start") || text.startsWith("/admin")) {
             StateRepo.clear(tgId);
             if (text.startsWith("/start")) {
                 SendMessage sm = md(m.getChatId(), Texts.start(m.getFrom().getFirstName()));
-                // ВАЖНО: здесь меню БЕЗ "Админ-панель"
-                sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
+                sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId))); // без кнопки «админ-панель»
                 safeExecute(sm);
                 return;
             }
@@ -116,7 +115,7 @@ public class CoachBot extends TelegramLongPollingBot {
             }
         }
 
-        // /help — памятка
+        // /help
         if (text.startsWith("/help")) {
             SendMessage sm = md(m.getChatId(), helpText());
             sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
@@ -124,11 +123,14 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // --- состояние пользователя: отчёт (жёсткий режим, только cancel)
+        // --- пользовательский визард отчёта
         var stUser = StateRepo.get(tgId);
         if (stUser != null && "REPORT".equals(stUser.type())) {
             if (text.startsWith("/")) {
-                safeExecute(md(m.getChatId(),"Сначала завершите отчёт или отмените его кнопкой «✖️ Отменить заполнение»."));
+                SendMessage warn = new SendMessage(String.valueOf(m.getChatId()),
+                        "Вы в процессе записи отчёта. Для отмены нажмите кнопку ниже ✖️");
+                warn.setReplyMarkup(Keyboards.reportCancel());
+                safeExecute(warn);
                 return;
             }
             var sm = ReportWizard.onMessage(tgId, m.getChatId(), m);
@@ -140,13 +142,13 @@ public class CoachBot extends TelegramLongPollingBot {
         var stAdmin = StateRepo.get(tgId);
         if (stAdmin != null) {
 
-            // Жёсткий визард контактов
+            // Контакты — жёсткий визард
             if ("CONTACT".equals(stAdmin.type())) {
                 if (text.startsWith("/")) {
                     safeExecute(md(m.getChatId(),"Сейчас идёт ввод контактов. Введите текст контактов или нажмите «✖️ Отменить ввод»."));
                     return;
                 }
-                var sm = ContactWizard.onMessage(tgId, m.getChatId(), text);
+                var sm = com.example.coachbot.service.ContactWizard.onMessage(tgId, m.getChatId(), text);
                 if (sm != null) {
                     sm.setReplyMarkup(Keyboards.backToAdmin());
                     safeExecute(sm);
@@ -154,7 +156,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 return;
             }
 
-            // ======== ДОБАВИТЬ В ГРУППУ (по tg_id) ========
+            // Добавить в группу (tg_id строкой)
             if ("ASK_GROUP_ADD".equals(stAdmin.type())) {
                 if (stAdmin.step() == 1) {
                     if (text.startsWith("/")) {
@@ -181,7 +183,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // ======== ДОБАВИТЬ АДМИНА (по tg_id) ========
+            // Добавить админа (tg_id)
             if ("ASK_ADMIN_ADD".equals(stAdmin.type())) {
                 if (stAdmin.step() == 1) {
                     if (text.startsWith("/")) {
@@ -206,10 +208,10 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // ======== УСТАНОВИТЬ КБЖУ: выбор по номеру ========
+            // Установить КБЖУ: выбор по номеру -> дата
             if ("ASK_SET_CAL".equals(stAdmin.type())) {
                 switch (stAdmin.step()) {
-                    case 1 -> { // ждём номер
+                    case 1 -> {
                         Integer idx = parseInt(text);
                         String[] ids = stAdmin.payload().split(",");
                         if (idx == null || idx < 1 || idx > ids.length) {
@@ -220,28 +222,27 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_CAL", 2, uid);
-                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy`:");
-                        q.setReplyMarkup(Keyboards.backToAdmin());
+                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:");
+                        q.setReplyMarkup(Keyboards.dateQuickPick("date:setcal", TimeUtil.today()));
                         safeExecute(q);
                         return;
                     }
-                    case 2 -> { // ждём дату
+                    case 2 -> {
                         String uid = stAdmin.payload();
                         LocalDate date = TimeUtil.parseDate(text);
                         if (date == null) {
                             SendMessage err = md(m.getChatId(),"Неверная дата. Введите в формате `dd.MM.yyyy`, например `01.11.2025`.");
-                            err.setReplyMarkup(Keyboards.backToAdmin());
+                            err.setReplyMarkup(Keyboards.dateQuickPick("date:setcal", TimeUtil.today()));
                             safeExecute(err);
                             return;
                         }
-                        // НЕ чистим состояние — визард сам поставит SET_CAL
                         safeExecute(CaloriesWizard.start(tgId, m.getChatId(), uid, date));
                         return;
                     }
                 }
             }
 
-            // ======== УСТАНОВИТЬ ПЛАН: выбор по номеру ========
+            // Установить план: выбор по номеру -> дата
             if ("ASK_SET_PLAN".equals(stAdmin.type())) {
                 switch (stAdmin.step()) {
                     case 1 -> {
@@ -255,8 +256,8 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_PLAN", 2, uid);
-                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy`:");
-                        q.setReplyMarkup(Keyboards.backToAdmin());
+                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:");
+                        q.setReplyMarkup(Keyboards.dateQuickPick("date:setplan", TimeUtil.today()));
                         safeExecute(q);
                         return;
                     }
@@ -265,18 +266,17 @@ public class CoachBot extends TelegramLongPollingBot {
                         LocalDate date = TimeUtil.parseDate(text);
                         if (date == null) {
                             SendMessage err = md(m.getChatId(),"Неверная дата. Введите в формате `dd.MM.yyyy`, например `01.11.2025`.");
-                            err.setReplyMarkup(Keyboards.backToAdmin());
+                            err.setReplyMarkup(Keyboards.dateQuickPick("date:setplan", TimeUtil.today()));
                             safeExecute(err);
                             return;
                         }
-                        // НЕ чистим — визард сам поставит SET_PLAN
                         safeExecute(PlanWizard.start(tgId, m.getChatId(), uid, date));
                         return;
                     }
                 }
             }
 
-            // ======== УСТАНОВИТЬ НОРМЫ: выбор по номеру ========
+            // Установить нормы: выбор по номеру -> дата
             if ("ASK_SET_NORM".equals(stAdmin.type())) {
                 switch (stAdmin.step()) {
                     case 1 -> {
@@ -290,8 +290,8 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_NORM", 2, uid);
-                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy`:");
-                        q.setReplyMarkup(Keyboards.backToAdmin());
+                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:");
+                        q.setReplyMarkup(Keyboards.dateQuickPick("date:setnorm", TimeUtil.today()));
                         safeExecute(q);
                         return;
                     }
@@ -300,18 +300,17 @@ public class CoachBot extends TelegramLongPollingBot {
                         LocalDate date = TimeUtil.parseDate(text);
                         if (date == null) {
                             SendMessage err = md(m.getChatId(),"Неверная дата. Введите в формате `dd.MM.yyyy`, например `01.11.2025`.");
-                            err.setReplyMarkup(Keyboards.backToAdmin());
+                            err.setReplyMarkup(Keyboards.dateQuickPick("date:setnorm", TimeUtil.today()));
                             safeExecute(err);
                             return;
                         }
-                        // НЕ чистим — визард сам поставит SET_NORM
                         safeExecute(NormWizard.start(tgId, m.getChatId(), uid, date));
                         return;
                     }
                 }
             }
 
-            // ======== УДАЛИТЬ ИЗ ГРУППЫ: выбор по номеру ========
+            // Удалить из группы
             if ("ASK_GROUP_DEL".equals(stAdmin.type())) {
                 if (stAdmin.step() == 1) {
                     Integer idx = parseInt(text);
@@ -334,7 +333,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // ======== УДАЛИТЬ АДМИНА: выбор по номеру ========
+            // Удалить админа
             if ("ASK_ADMIN_DEL".equals(stAdmin.type())) {
                 if (stAdmin.step() == 1) {
                     Integer idx = parseInt(text);
@@ -355,7 +354,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // Время рассылки (супер-админ)
+            // Время рассылки
             if ("ASK_SET_TIME".equals(stAdmin.type())) {
                 if (UserRepo.role(tgId) != Roles.SUPERADMIN) {
                     SendMessage sm = md(m.getChatId(), "Недостаточно прав.");
@@ -379,23 +378,11 @@ public class CoachBot extends TelegramLongPollingBot {
                 return;
             }
 
-            /* ===== ОБРАБОТКА самих визардов ===== */
+            // Обработка визардов (рабочие шаги, пока админ вводит значения)
             switch (stAdmin.type()) {
-                case "SET_CAL" -> { // калории → белки → жиры → углеводы
-                    var sm = CaloriesWizard.onMessage(tgId, m.getChatId(), text);
-                    if (sm != null) safeExecute(sm);
-                    return;
-                }
-                case "SET_PLAN" -> { // пошаговый ввод упражнений
-                    var sm = PlanWizard.onMessage(tgId, m.getChatId(), text);
-                    if (sm != null) safeExecute(sm);
-                    return;
-                }
-                case "SET_NORM" -> { // вода → шаги → сон
-                    var sm = NormWizard.onMessage(tgId, m.getChatId(), text);
-                    if (sm != null) safeExecute(sm);
-                    return;
-                }
+                case "SET_CAL" -> { var sm = CaloriesWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
+                case "SET_PLAN" -> { var sm = PlanWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
+                case "SET_NORM" -> { var sm = NormWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
             }
         }
 
@@ -416,9 +403,46 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // по умолчанию — предлагаем меню
+        // по умолчанию
         SendMessage sm = new SendMessage(String.valueOf(m.getChatId()), "Пожалуйста, используйте меню ниже.");
         sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
+        safeExecute(sm);
+    }
+
+    /* ======== БЛОКИРОВКА КНОПОК ДЛЯ АДМИН-ВИЗАРДОВ ======== */
+
+    private boolean isAdminWizard(String t) {
+        return switch (t) {
+            case "CONTACT",
+                 "ASK_SET_CAL","ASK_SET_PLAN","ASK_SET_NORM",
+                 "ASK_GROUP_ADD","ASK_GROUP_DEL",
+                 "ASK_ADMIN_ADD","ASK_ADMIN_DEL",
+                 "ASK_SET_TIME",
+                 "SET_CAL","SET_PLAN","SET_NORM" -> true;
+            default -> false;
+        };
+    }
+    private boolean adminWizardAllows(String type, String data) {
+        return switch (type) {
+            case "CONTACT" -> data.equals("contact:cancel") || data.equals("menu:admin");
+            case "ASK_SET_CAL" -> data.startsWith("pick:setcal") || data.startsWith("date:setcal") || data.equals("menu:admin");
+            case "ASK_SET_PLAN" -> data.startsWith("pick:setplan") || data.startsWith("date:setplan") || data.equals("menu:admin");
+            case "ASK_SET_NORM" -> data.startsWith("pick:setnorm") || data.startsWith("date:setnorm") || data.equals("menu:admin");
+            case "ASK_GROUP_DEL" -> data.startsWith("pick:groupdel") || data.equals("menu:admin");
+            case "ASK_GROUP_ADD" -> data.equals("menu:admin");
+            case "ASK_ADMIN_ADD" -> data.equals("menu:admin");
+            case "ASK_ADMIN_DEL" -> data.startsWith("pick:admindel") || data.equals("menu:admin");
+            case "ASK_SET_TIME" -> data.equals("menu:admin");
+            case "SET_PLAN" -> data.equals("plan:finish") || data.equals("menu:admin");
+            case "SET_CAL", "SET_NORM" -> data.equals("menu:admin");
+            default -> true;
+        };
+    }
+    private void warnAdminBusy(long chatId, String type) {
+        SendMessage sm = new SendMessage(String.valueOf(chatId),
+                "Вы в процессе админ-действия. Завершите текущий шаг или вернитесь в админ-панель.");
+        if ("CONTACT".equals(type)) sm.setReplyMarkup(Keyboards.contactCancelOnly());
+        else sm.setReplyMarkup(Keyboards.backToAdmin());
         safeExecute(sm);
     }
 
@@ -427,25 +451,30 @@ public class CoachBot extends TelegramLongPollingBot {
         String tgId = String.valueOf(cq.getFrom().getId());
         long chatId = cq.getMessage().getChatId();
 
-        // убрать "часики"
         try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build()); } catch (Exception ignored) {}
 
-        // блок контактов (жёсткий)
-        var st = StateRepo.get(tgId);
-        if (st != null && "CONTACT".equals(st.type())) {
-            if ("contact:cancel".equals(data)) {
-                StateRepo.clear(tgId);
-                SendMessage panel = md(chatId, Texts.adminTitle());
-                panel.setReplyMarkup(Keyboards.adminPanel(isSuper(tgId)));
-                safeExecute(panel);
-                return;
-            } else {
-                execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Сначала завершите ввод контактов или отмените.").showAlert(true).build());
+        // ===== Жёсткая блокировка во время отчёта =====
+        var stUser = StateRepo.get(tgId);
+        if (stUser != null && "REPORT".equals(stUser.type())) {
+            if (!"report:cancel".equals(data)) {
+                SendMessage warn = new SendMessage(String.valueOf(chatId),
+                        "Вы в процессе записи отчёта. Для отмены нажмите кнопку ниже ✖️");
+                warn.setReplyMarkup(Keyboards.reportCancel());
+                safeExecute(warn);
                 return;
             }
         }
 
-        // ---- главное меню
+        // ===== Жёсткая блокировка для админ-визардов =====
+        var stAdmin = StateRepo.get(tgId);
+        if (stAdmin != null && isAdminWizard(stAdmin.type())) {
+            if (!adminWizardAllows(stAdmin.type(), data)) {
+                warnAdminBusy(chatId, stAdmin.type());
+                return;
+            }
+        }
+
+        // меню
         if ("menu:main".equals(data)) {
             SendMessage sm = md(chatId, Texts.start(cq.getFrom().getFirstName()));
             sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
@@ -463,9 +492,19 @@ public class CoachBot extends TelegramLongPollingBot {
 
         if ("menu:workout".equals(data)) {
             String msg = PlanRepo.getWorkoutText(tgId, TimeUtil.today());
-            SendMessage sm = new SendMessage(String.valueOf(chatId), msg);
-            sm.setReplyMarkup(Keyboards.backToMenu());
-            safeExecute(sm);
+            if (msg == null || msg.isBlank()) {
+                SendMessage sm = new SendMessage(String.valueOf(chatId), "План тренировки на сегодня не задан.");
+                sm.setReplyMarkup(Keyboards.backToMenu());
+                safeExecute(sm);
+                return;
+            }
+            int max = 3800;
+            for (int i=0; i<msg.length(); i+=max) {
+                String part = msg.substring(i, Math.min(msg.length(), i+max));
+                SendMessage sm = new SendMessage(String.valueOf(chatId), part);
+                if (i==0) sm.setReplyMarkup(Keyboards.backToMenu());
+                safeExecute(sm);
+            }
             return;
         }
 
@@ -495,7 +534,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // ---- админ-панель (вход)
+        // вход в админку
         if ("menu:admin".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Команда только для админов.")); return; }
             SendMessage sm = md(chatId, Texts.adminTitle());
@@ -504,7 +543,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Моя группа — вывод + пагинация
+        // Моя группа
         if ("admin:my".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             renderMyGroup(chatId, tgId, 1);
@@ -516,7 +555,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Все пользователи — вывод
+        // Все пользователи
         if ("admin:all".equals(data) || "admin:allusers".equals(data) || "admin:users".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             renderAllUsers(chatId, 1);
@@ -528,7 +567,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // ====== визарды — старт ======
+        // Старт визардов
         if ("admin:groupadd".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             StateRepo.set(tgId, "ASK_GROUP_ADD", 1, "");
@@ -556,11 +595,6 @@ public class CoachBot extends TelegramLongPollingBot {
             renderGroupPicker(chatId, tgId, "pick:setnorm", 1, "ASK_SET_NORM", "Выберите пользователя по номеру из списка:");
             return;
         }
-        if ("admin:del".equals(data)) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
-            renderAdminsPicker(chatId, "pick:admindel", 1, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
-            return;
-        }
 
         // Пагинация пиков
         if (data.startsWith("pick:setcal:")) {
@@ -583,42 +617,45 @@ public class CoachBot extends TelegramLongPollingBot {
             renderGroupPicker(chatId, tgId, "pick:groupdel", page, "ASK_GROUP_DEL", "Выберите пользователя по номеру для удаления из группы:");
             return;
         }
+
+        // Быстрые даты для админ-визардов
+        if (data.startsWith("date:setcal:") || data.startsWith("date:setplan:") || data.startsWith("date:setnorm:")) {
+            if (stAdmin == null || !(stAdmin.type().equals("ASK_SET_CAL") || stAdmin.type().equals("ASK_SET_PLAN") || stAdmin.type().equals("ASK_SET_NORM")) || stAdmin.step()!=2) {
+                return;
+            }
+            String when = data.substring(data.lastIndexOf(':')+1);
+            LocalDate base = TimeUtil.today();
+            LocalDate date = switch (when) {
+                case "today" -> base;
+                case "tomorrow" -> base.plusDays(1);
+                case "aftertomorrow" -> base.plusDays(2);
+                default -> base;
+            };
+
+            String uid = stAdmin.payload(); // шаг 2: payload = uid
+            if (data.startsWith("date:setcal:")) {
+                safeExecute(CaloriesWizard.start(tgId, chatId, uid, date));
+            } else if (data.startsWith("date:setplan:")) {
+                safeExecute(PlanWizard.start(tgId, chatId, uid, date));
+            } else {
+                safeExecute(NormWizard.start(tgId, chatId, uid, date));
+            }
+            return;
+        }
+
+        // Удалить админа
+        if ("admin:del".equals(data)) {
+            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
+            renderAdminsPicker(chatId, "pick:admindel", 1, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
+            return;
+        }
         if (data.startsWith("pick:admindel:")) {
             int page = Integer.parseInt(data.substring("pick:admindel:".length()));
             renderAdminsPicker(chatId, "pick:admindel", page, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
             return;
         }
 
-        // Контакты — жёсткий визард
-        if ("admin:contact".equals(data)) {
-            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            SendMessage sm = ContactWizard.start(tgId, chatId);
-            sm.setReplyMarkup(Keyboards.contactCancelOnly());
-            safeExecute(sm);
-            return;
-        }
-
-        // Время рассылки — мини-визард (супер-админ)
-        if ("admin:settime".equals(data)) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
-            StateRepo.set(tgId, "ASK_SET_TIME", 1, "");
-            SendMessage sm = md(chatId, "Введите время в формате `HH:mm` (Екатеринбург):");
-            sm.setReplyMarkup(Keyboards.backToAdmin());
-            safeExecute(sm);
-            return;
-        }
-
-        // Добавить админа — по tg_id (запрос текста)
-        if ("admin:add".equals(data)) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
-            StateRepo.set(tgId, "ASK_ADMIN_ADD", 1, "");
-            SendMessage sm = md(chatId, "Введите *tg_id* пользователя для назначения администратором:");
-            sm.setReplyMarkup(Keyboards.backToAdmin());
-            safeExecute(sm);
-            return;
-        }
-
-        // отчёт: отмена и старт
+        // отчёт
         if ("report:cancel".equals(data)) {
             safeExecute(ReportWizard.cancel(String.valueOf(cq.getFrom().getId()), chatId));
             try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build()); } catch (Exception ignored) {}
@@ -637,7 +674,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // пагинация отчётов
+        // Пагинация отчётов
         if (data.startsWith("reports:")) {
             String[] p = data.split(":");
             String uid = p[1];
@@ -652,7 +689,7 @@ public class CoachBot extends TelegramLongPollingBot {
         if ("noop".equals(data)) { return; }
     }
 
-    /* ==================== ПИКЕРЫ (пагинированные списки для выбора по номеру) ==================== */
+    /* ==================== пикеры списков ==================== */
 
     private String formatRow(UserRepo.UserRow r) {
         String name = (r.firstName != null && !r.firstName.isBlank()) ? r.firstName : "—";
@@ -683,13 +720,13 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         StateRepo.set(adminId, armStateType, 1, payload.toString());
         SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt);
-        msg.setReplyMarkup(Keyboards.pager(base, page, pages)); // ⬅️ 📄 ➡️
+        msg.setReplyMarkup(Keyboards.pager(base, page, pages));
         safeExecute(msg);
     }
 
     private void renderAdminsPicker(long chatId, String base, int page, String armStateType, String prompt) throws Exception {
         int size = 10;
-        int total = UserRepo.countAdmins(); // ADMIN
+        int total = UserRepo.countAdmins();
         if (total <= 0) {
             SendMessage empty = new SendMessage(String.valueOf(chatId), "Список админов пуст.");
             empty.setReplyMarkup(Keyboards.backToAdmin());
@@ -714,7 +751,7 @@ public class CoachBot extends TelegramLongPollingBot {
         safeExecute(msg);
     }
 
-    // ===== запросы для списков =====
+    // ===== данные для списков =====
 
     private List<UserRepo.UserRow> fetchGroupUsersDetailed(String adminId, int limit, int offset) throws Exception {
         List<UserRepo.UserRow> out = new ArrayList<>();

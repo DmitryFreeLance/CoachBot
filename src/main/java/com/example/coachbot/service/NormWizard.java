@@ -1,8 +1,9 @@
 package com.example.coachbot.service;
 
-import com.example.coachbot.repo.NormRepo;
 import com.example.coachbot.repo.StateRepo;
+import com.example.coachbot.repo.NormRepo;
 import com.example.coachbot.TimeUtil;
+import com.example.coachbot.Keyboards;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 
@@ -10,10 +11,9 @@ import java.time.LocalDate;
 
 public class NormWizard {
 
-    // Удобный хелпер для Markdown-сообщений
     private static SendMessage md(long chatId, String text) {
         SendMessage sm = new SendMessage(String.valueOf(chatId), text);
-        sm.setParseMode(ParseMode.MARKDOWN); // или "MarkdownV2", если используете экранирование
+        sm.setParseMode(ParseMode.MARKDOWN);
         return sm;
     }
 
@@ -52,7 +52,9 @@ public class NormWizard {
                 Integer steps = Integer.parseInt(arr[3]);
                 NormRepo.setNorms(userId, date, water, steps, sleep, adminId);
                 StateRepo.clear(adminId);
-                return new SendMessage(String.valueOf(chatId), "Нормы активности сохранены.");
+                SendMessage ok = new SendMessage(String.valueOf(chatId), "Нормы активности сохранены.");
+                ok.setReplyMarkup(Keyboards.backToAdmin());
+                return ok;
             }
         }
         return null;
@@ -62,7 +64,6 @@ public class NormWizard {
         try { return Double.parseDouble(s.replace(',', '.').trim()); }
         catch (Exception e) { return null; }
     }
-
     private static Integer parseI(String s) {
         try { return Integer.parseInt(s.trim().replace(" ", "")); }
         catch (Exception e) { return null; }

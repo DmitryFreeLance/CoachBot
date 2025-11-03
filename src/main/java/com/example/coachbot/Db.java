@@ -1,4 +1,5 @@
 package com.example.coachbot;
+
 import java.io.File;
 import java.sql.*;
 
@@ -41,24 +42,9 @@ public class Db {
             try {
                 migrateUsersTable(c);
                 migrateGroupsTable(c);
-                migrateSettingsTable(c); // ⬅ миграция settings(key,value) → settings(k,v)
-
-                // Справочники/таблицы, которые ждут репозитории
-                createIfMissing(c, """
-                    CREATE TABLE IF NOT EXISTS settings(
-                      k TEXT PRIMARY KEY,
-                      v TEXT
-                    )
-                """);
-
-                createIfMissing(c, """
-                    CREATE TABLE IF NOT EXISTS user_states(
-                      user_id TEXT PRIMARY KEY,
-                      type    TEXT,
-                      step    INTEGER,
-                      payload TEXT
-                    )
-                """);
+                migrateSettingsTable(c);       // k/v -> key/value
+                migrateReportsTable(c);        // гарантирует полноценную схему reports
+                migrateNormsTables(c);         // создаст activity_norms и перенесёт из norms при наличии
 
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS nutrition_plans(
@@ -84,37 +70,7 @@ public class Db {
                 """);
 
                 createIfMissing(c, """
-                    CREATE TABLE IF NOT EXISTS activity_norms(
-                      user_id      TEXT NOT NULL,
-                      date         TEXT NOT NULL,
-                      water_liters REAL,
-                      steps        INTEGER,
-                      sleep_hours  REAL,
-                      set_by       TEXT,
-                      PRIMARY KEY(user_id,date)
-                    )
-                """);
-
-                createIfMissing(c, """
-                    CREATE TABLE IF NOT EXISTS reports(
-                      user_id   TEXT NOT NULL,
-                      date      TEXT NOT NULL,
-                      sleep     REAL,
-                      steps     INTEGER,
-                      water     REAL,
-                      kcal      INTEGER,
-                      p         REAL,
-                      f         REAL,
-                      c         REAL,
-                      note      TEXT,
-                      photo_id  TEXT,
-                      created_at INTEGER,
-                      PRIMARY KEY(user_id,date)
-                    )
-                """);
-
-                createIfMissing(c, """
-                    CREATE TABLE IF NOT EXISTS processed_updates(
+                    CREATE TABLE IF NOT EXISTS updates_guard(
                       update_id INTEGER PRIMARY KEY
                     )
                 """);
@@ -166,6 +122,7 @@ public class Db {
             return;
         }
 
+        // Проверяем наличие всех нужных колонок
         boolean hasId        = tableHasColumn(c, "users", "id");
         boolean hasUsername  = tableHasColumn(c, "users", "username");
         boolean hasFirstName = tableHasColumn(c, "users", "first_name");
@@ -237,43 +194,150 @@ public class Db {
         }
     }
 
-    // 🔧 миграция settings(key,value) → settings(k,v)
+    // settings: привести к key/value и перенести данные из старой схемы k/v
     private static void migrateSettingsTable(Connection c) throws SQLException {
-        if (!tableExists(c, "settings")) {
+        boolean exists = tableExists(c, "settings");
+        if (!exists) {
             try (Statement st = c.createStatement()) {
                 st.execute("""
                     CREATE TABLE settings(
-                      k TEXT PRIMARY KEY,
-                      v TEXT
+                      key TEXT PRIMARY KEY,
+                      value TEXT
+                    )
+                """);
+            }
+            return;
+        }
+        // если уже key/value — выходим
+        boolean hasKey = tableHasColumn(c, "settings", "key");
+        boolean hasValue = tableHasColumn(c, "settings", "value");
+        if (hasKey && hasValue) return;
+
+        // старая таблица могла быть k/v
+        boolean hasK = tableHasColumn(c, "settings", "k");
+        boolean hasV = tableHasColumn(c, "settings", "v");
+
+        try (Statement st = c.createStatement()) {
+            st.execute("""
+                CREATE TABLE settings_new(
+                  key TEXT PRIMARY KEY,
+                  value TEXT
+                )
+            """);
+            if (hasK && hasV) {
+                st.execute("INSERT OR IGNORE INTO settings_new(key,value) SELECT k,v FROM settings");
+            }
+            st.execute("DROP TABLE settings");
+            st.execute("ALTER TABLE settings_new RENAME TO settings");
+        }
+    }
+
+    // reports: создать или пересобрать полную схему
+    private static void migrateReportsTable(Connection c) throws SQLException {
+        boolean exists = tableExists(c, "reports");
+        if (!exists) {
+            try (Statement st = c.createStatement()) {
+                st.execute("""
+                    CREATE TABLE reports(
+                      user_id    TEXT NOT NULL,
+                      date       TEXT NOT NULL,
+                      sleep      REAL,
+                      steps      INTEGER,
+                      water      REAL,
+                      kcal       INTEGER,
+                      p          REAL,
+                      f          REAL,
+                      c          REAL,
+                      note       TEXT,
+                      photo_id   TEXT,
+                      created_at INTEGER,
+                      PRIMARY KEY(user_id,date)
                     )
                 """);
             }
             return;
         }
 
-        boolean hasK = tableHasColumn(c, "settings", "k");
-        boolean hasV = tableHasColumn(c, "settings", "v");
-        boolean hasKey = tableHasColumn(c, "settings", "key");
-        boolean hasValue = tableHasColumn(c, "settings", "value");
-
-        if (hasK && hasV && !hasKey && !hasValue) return;
+        // Проверим наличие обязательных колонок
+        String[] required = {"user_id","date","sleep","steps","water","kcal","p","f","c","note","photo_id","created_at"};
+        boolean ok = true;
+        for (String col : required) if (!tableHasColumn(c, "reports", col)) { ok = false; break; }
+        if (ok) return;
 
         try (Statement st = c.createStatement()) {
             st.execute("""
-                CREATE TABLE IF NOT EXISTS settings_new(
-                  k TEXT PRIMARY KEY,
-                  v TEXT
+                CREATE TABLE reports_new(
+                  user_id    TEXT NOT NULL,
+                  date       TEXT NOT NULL,
+                  sleep      REAL,
+                  steps      INTEGER,
+                  water      REAL,
+                  kcal       INTEGER,
+                  p          REAL,
+                  f          REAL,
+                  c          REAL,
+                  note       TEXT,
+                  photo_id   TEXT,
+                  created_at INTEGER,
+                  PRIMARY KEY(user_id,date)
                 )
             """);
 
-            if (hasKey && hasValue) {
-                st.execute("INSERT OR IGNORE INTO settings_new(k, v) SELECT key, value FROM settings");
-            } else if (hasK && hasV) {
-                st.execute("INSERT OR IGNORE INTO settings_new(k, v) SELECT k, v FROM settings");
-            }
+            // перенос данных по тем полям, что существуют
+            String selSleep = tableHasColumn(c,"reports","sleep") ? "sleep" : "NULL";
+            String selSteps = tableHasColumn(c,"reports","steps") ? "steps" : "NULL";
+            String selWater = tableHasColumn(c,"reports","water") ? "water" : "NULL";
+            String selKcal  = tableHasColumn(c,"reports","kcal")  ? "kcal"  : "NULL";
+            String selP     = tableHasColumn(c,"reports","p")     ? "p"     : "NULL";
+            String selF     = tableHasColumn(c,"reports","f")     ? "f"     : "NULL";
+            String selC     = tableHasColumn(c,"reports","c")     ? "c"     : "NULL";
+            String selNote  = tableHasColumn(c,"reports","note")  ? "note"  : "NULL";
+            String selPhoto = tableHasColumn(c,"reports","photo_id") ? "photo_id" : "NULL";
+            String selCreated = tableHasColumn(c,"reports","created_at") ? "created_at" : "NULL";
 
-            st.execute("DROP TABLE settings");
-            st.execute("ALTER TABLE settings_new RENAME TO settings");
+            String insert = "INSERT OR IGNORE INTO reports_new(user_id,date,sleep,steps,water,kcal,p,f,c,note,photo_id,created_at) " +
+                    "SELECT user_id,date,"+selSleep+","+selSteps+","+selWater+","+selKcal+","+selP+","+selF+","+selC+","+selNote+","+selPhoto+","+selCreated+" FROM reports";
+            st.execute(insert);
+
+            st.execute("DROP TABLE reports");
+            st.execute("ALTER TABLE reports_new RENAME TO reports");
+        }
+    }
+
+    // нормы: целевая таблица activity_norms; перенос из старой norms, если была
+    private static void migrateNormsTables(Connection c) throws SQLException {
+        // целевая
+        createIfMissing(c, """
+            CREATE TABLE IF NOT EXISTS activity_norms(
+              user_id     TEXT NOT NULL,
+              date        TEXT NOT NULL,
+              water_liters REAL,
+              steps        INTEGER,
+              sleep_hours  REAL,
+              set_by       TEXT,
+              PRIMARY KEY(user_id,date)
+            )
+        """);
+
+        // если есть старая norms — пытаемся перенести
+        if (tableExists(c, "norms")) {
+            boolean hasUser = tableHasColumn(c,"norms","user_id");
+            boolean hasDate = tableHasColumn(c,"norms","date");
+            boolean hasWater= tableHasColumn(c,"norms","water");
+            boolean hasSteps= tableHasColumn(c,"norms","steps");
+            boolean hasSleep= tableHasColumn(c,"norms","sleep");
+            boolean hasBy   = tableHasColumn(c,"norms","set_by");
+            if (hasUser && hasDate) {
+                String w = hasWater? "water":"NULL";
+                String s = hasSteps? "steps":"NULL";
+                String sl= hasSleep? "sleep":"NULL";
+                String by= hasBy? "set_by":"NULL";
+                try (Statement st = c.createStatement()) {
+                    st.execute("INSERT OR IGNORE INTO activity_norms(user_id,date,water_liters,steps,sleep_hours,set_by) " +
+                            "SELECT user_id,date,"+w+","+s+","+sl+","+by+" FROM norms");
+                } catch (SQLException ignored) {}
+            }
+            // оставляем старую norms как есть (без дропа) — безопаснее для отката
         }
     }
 
@@ -306,13 +370,13 @@ public class Db {
     }
 
     private static void ensureDefaultSetting(Connection c, String key, String value) {
-        try (PreparedStatement ps = c.prepareStatement("SELECT v FROM settings WHERE k=?")) {
+        try (PreparedStatement ps = c.prepareStatement("SELECT value FROM settings WHERE key=?")) {
             ps.setString(1, key);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) return;
             }
         } catch (Exception ignored) {}
-        try (PreparedStatement ins = c.prepareStatement("INSERT INTO settings(k,v) VALUES(?,?)")) {
+        try (PreparedStatement ins = c.prepareStatement("INSERT INTO settings(key,value) VALUES(?,?)")) {
             ins.setString(1, key);
             ins.setString(2, value);
             ins.executeUpdate();
