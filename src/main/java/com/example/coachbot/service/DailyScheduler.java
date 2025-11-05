@@ -33,10 +33,9 @@ public class DailyScheduler {
 
     private void tick() {
         try {
-            String eve = SettingsRepo.get("evening_time", "19:00");
             LocalDate today = TimeUtil.today();
 
-            // 08:00 — сценарий на сегодня (одно сообщение с фото 4.png)
+            // 08:00 — сценарий на сегодня (одно сообщение с фото 4.png) — общий для всех
             if (TimeUtil.isNow("08:00")) {
                 List<String> users = UserRepo.allActiveUsers();
                 for (String uid : users) {
@@ -62,25 +61,34 @@ public class DailyScheduler {
                 }
             }
 
-            // Вечерняя рассылка ТОЛЬКО если отчёта ещё нет; одно сообщение с фото 2.jpg
-            if (TimeUtil.isNow(eve)) {
-                List<String> users = UserRepo.allActiveUsers();
-                for (String uid : users) {
-                    if (!SentRepo.notSentYet("evening", uid, today)) continue;
-                    if (ReportRepo.existsFor(uid, today)) continue; // отправляем только тем, у кого нет отчёта
+            // Вечерняя рассылка — индивидуальное время для КАЖДОГО админа
+            var admins = UserRepo.listActiveAdminsDetailed();
+            for (var adm : admins) {
+                String eve = SettingsRepo.get("evening_time:" + adm.id, "19:00");
+                if (!TimeUtil.isNow(eve)) continue;
 
-                    String msg = Emojis.SUNSET + " Добрый вечер!\n"
-                            + "Вы не загрузили отчет за сегодня.\n"
-                            + "Пожалуйста, нажмите кнопку ниже, чтобы отправить дневной отчёт. " + Emojis.MUSCLE;
+                // Берём всех пользователей из группы админа (постранично)
+                int total = GroupRepo.countUsersOfAdmin(adm.id);
+                int size = 200;
+                for (int offset = 0; offset < total; offset += size) {
+                    var users = GroupRepo.usersOfAdmin(adm.id, size, offset);
+                    for (String uid : users) {
+                        if (!SentRepo.notSentYet("evening", uid, today)) continue;
+                        if (ReportRepo.existsFor(uid, today)) continue; // отправляем только тем, у кого нет отчёта
 
-                    SendPhoto sp = new SendPhoto();
-                    sp.setChatId(uid);
-                    sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("2.jpg")));
-                    sp.setCaption(trimCaption(msg));
-                    sp.setReplyMarkup(com.example.coachbot.Keyboards.reportButton());
+                        String msg = Emojis.SUNSET + " Добрый вечер!\n"
+                                + "Вы не загрузили отчет за сегодня.\n"
+                                + "Пожалуйста, нажмите кнопку ниже, чтобы отправить дневной отчёт. " + Emojis.MUSCLE;
 
-                    bot.safeExecute(sp);
-                    SentRepo.markSent("evening", uid, today);
+                        SendPhoto sp = new SendPhoto();
+                        sp.setChatId(uid);
+                        sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("2.jpg")));
+                        sp.setCaption(trimCaption(msg));
+                        sp.setReplyMarkup(com.example.coachbot.Keyboards.reportButton());
+
+                        bot.safeExecute(sp);
+                        SentRepo.markSent("evening", uid, today);
+                    }
                 }
             }
 

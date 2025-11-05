@@ -9,7 +9,7 @@ import java.util.List;
 
 public class Keyboards {
 
-    // Главное меню: без "Админ-панель"
+    // Главное меню
     public static InlineKeyboardMarkup inlineMainMenu(boolean isAdmin, boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("🍽 План питания", "menu:food")));
@@ -30,7 +30,16 @@ public class Keyboards {
 
     public static InlineKeyboardMarkup backToAdmin() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
-        m.setKeyboard(List.of(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin"))));
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+        m.setKeyboard(rows);
+        return m;
+    }
+
+    // Кнопка назад в /superadmin
+    public static InlineKeyboardMarkup superAdminBack() {
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(List.of(List.of(btn("🔙 В супер-панель", "menu:super"))));
         return m;
     }
 
@@ -41,14 +50,14 @@ public class Keyboards {
         return m;
     }
 
-    // Отчёт: только отмена (по требованию)
+    // Отчёт: только отмена
     public static InlineKeyboardMarkup reportCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(List.of(btn("✖️ Отменить заполнение", "report:cancel"))));
         return m;
     }
 
-    // План: завершить + назад в меню — должны быть в каждом сообщении визарда
+    // План: завершить + назад в меню — в каждом сообщении визарда
     public static InlineKeyboardMarkup planFinalizeButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -58,28 +67,34 @@ public class Keyboards {
         return m;
     }
 
-    // Админ-панель
-    public static InlineKeyboardMarkup adminPanel(boolean isSuper) {
+    // Админ-панель (без супер-кнопок и без «Все пользователи»)
+    public static InlineKeyboardMarkup adminPanel() {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("👥 Моя группа", "admin:my")));
-        rows.add(List.of(btn("👤 Все пользователи", "admin:all")));
         rows.add(List.of(btn("➕ Добавить в группу", "admin:groupadd")));
         rows.add(List.of(btn("➖ Удалить из группы", "admin:groupdel")));
         rows.add(List.of(btn("🍽 Установить КБЖУ", "admin:setcal")));
         rows.add(List.of(btn("🏋️ Установить план", "admin:setplan")));
         rows.add(List.of(btn("📊 Установить нормы", "admin:setnorma")));
         rows.add(List.of(btn("📞 Контакты тренера", "admin:contact")));
-        if (isSuper) {
-            rows.add(List.of(btn("⏰ Время рассылки", "admin:settime")));
-            rows.add(List.of(btn("➕ Добавить админа", "admin:add")));
-            rows.add(List.of(btn("➖ Удалить админа", "admin:del")));
-        }
+        rows.add(List.of(btn("⏰ Время рассылки (моя группа)", "admin:settime")));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;
     }
 
-    // Универсальный пейджер: ⬅️ 📄 ➡️ + "Назад в админ-панель"
+    // Супер-админ панель (/superadmin)
+    public static InlineKeyboardMarkup superAdminPanel() {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(btn("➕ Добавить админа", "super:add")));
+        rows.add(List.of(btn("➖ Удалить админа", "super:del")));
+        rows.add(List.of(btn("🔙 В админ-панель", "menu:admin")));
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(rows);
+        return m;
+    }
+
+    // Универсальный пейджер: ⬅️ 📄 ➡️ + "Назад"
     public static InlineKeyboardMarkup pager(String base, int page, int pages) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         List<InlineKeyboardButton> nav = new ArrayList<>();
@@ -87,7 +102,9 @@ public class Keyboards {
         nav.add(btn("📄 " + page + "/" + pages, "noop"));
         nav.add(btn("➡️", base + ":" + Math.min(pages, page + 1)));
         rows.add(nav);
-        rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+        // Назад куда релевантно: если это супер-операции — пусть возвращают в super, иначе — в admin
+        String backTarget = base.startsWith("pick:admin") || base.startsWith("pick:admindel") ? "menu:super" : "menu:admin";
+        rows.add(List.of(btn("🔙 Назад", backTarget)));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;

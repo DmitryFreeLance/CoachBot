@@ -10,8 +10,8 @@ public class App {
 
     public static void main(String[] args) throws Exception {
         // ENV с дефолтами
-        final String token        = System.getenv().getOrDefault("BOT_TOKEN",    "8426747568:AAGVeTB4IdDCTmKh_qhsdE0AbALpRsaJgV8");
-        final String username     = System.getenv().getOrDefault("BOT_USERNAME", "PersonalTrainerr_bot");
+        final String token        = System.getenv().getOrDefault("BOT_TOKEN",    "8571487160:AAFrBM6eVKmN8lf31RoGLYeZDKDLg7UsepI");
+        final String username     = System.getenv().getOrDefault("BOT_USERNAME", "@justheckbot45_bot");
         final String superAdmins  = System.getenv().getOrDefault("SUPERADMINS",  "726773708");
         final String dbPath       = System.getenv().getOrDefault("DB_PATH",      "./data/bot.db");
         final String tz           = System.getenv().getOrDefault("TZ",           "Asia/Yekaterinburg");
