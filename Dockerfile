@@ -10,11 +10,12 @@ RUN mvn -q -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -q clean package -DskipTests
 
-# нормализуем артефакт -> /app/app.jar (берём первый jar из target/)
+# НОРМАЛИЗУЕМ: кладём ИМЕННО shaded-джар в /app/app.jar
 RUN set -eux; \
     ls -l target; \
-    JAR="$(ls target/*.jar | head -n1)"; \
+    JAR="$(ls target/*-shaded.jar | head -n1)"; \
     cp "$JAR" /app/app.jar; \
+    echo "Using shaded JAR: $JAR"; \
     ls -l /app/app.jar
 
 # ===== runtime =====
@@ -24,7 +25,7 @@ WORKDIR /app
 # готовый jar из build-стадии
 COPY --from=build /app/app.jar /app/app.jar
 
-# все картинки, которые использует код
+# картинки, которые использует код (у вас фигурируют 2.jpg,3.png,4.png,7.png,8.png,10.png,11.png)
 COPY 2.jpg 3.png 4.png 7.png 8.png 10.png 11.png /app/
 
 # каталог под SQLite
