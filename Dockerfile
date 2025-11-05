@@ -1,33 +1,25 @@
 # ===== build =====
-FROM maven:3.9-eclipse-temurin-21-jammy AS build
+FROM maven:3.9-amazoncorretto-21 AS build
 WORKDIR /app
 
-# кэш зависимостей
 COPY pom.xml .
-RUN mvn -q -DskipTests dependency:go-offline
-
-# исходники
 COPY src ./src
 
-# Сборка жирного JAR'а с фиксированным именем target/app.jar
-# shade:shade запускаем явно и задаём параметры плагина через -D:
-#  -DfinalName=app                -> target/app.jar
-#  -DshadedArtifactAttached=false -> чтобы НЕ было app-shaded.jar + обычного jar
-RUN mvn -q clean package -DskipTests \
-    shade:shade -DfinalName=app -DshadedArtifactAttached=false \
- && ls -l target
+# В вашем pom.xml shade уже привязан к фазе package — этого достаточно
+RUN mvn -q clean package -DskipTests
 
 # ===== runtime =====
-FROM eclipse-temurin:21-jre-jammy
+# Лучше не зависеть от docker.io/openjdk: берем AWS ECR (обычно доступнее)
+FROM public.ecr.aws/amazoncorretto/amazoncorretto:21-al2023-headless
 WORKDIR /app
 
-# готовый jar
-COPY --from=build /app/target/app.jar /app/app.jar
+# Берём именно FAT-jar из target и даём фиксированное имя
+COPY --from=build /app/target/*-shaded.jar /app/app.jar
 
-# картинки, которые использует бот
+# Картинки, которые использует бот
 COPY 2.jpg 3.png 4.png 7.png 8.png 10.png 11.png /app/
 
-# каталог под SQLite
+# Каталог под SQLite
 RUN mkdir -p /app/data
 
 ENV TZ=Asia/Yekaterinburg
