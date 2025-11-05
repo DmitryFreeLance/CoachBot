@@ -264,7 +264,9 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_CAL", 2, uid);
-                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:");
+                        SendMessage q = md(m.getChatId(),
+                                "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:\n" +
+                                        "_Подсказка: «1 день» — сегодня, «2 день» — завтра, … «7 день» — через 6 дней._");
                         q.setReplyMarkup(Keyboards.dateQuickPick("date:setcal", TimeUtil.today()));
                         safeExecute(q);
                         return;
@@ -298,7 +300,9 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_PLAN", 2, uid);
-                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:");
+                        SendMessage q = md(m.getChatId(),
+                                "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:\n" +
+                                        "_Подсказка: «1 день» — сегодня, «2 день» — завтра, … «7 день» — через 6 дней._");
                         q.setReplyMarkup(Keyboards.dateQuickPick("date:setplan", TimeUtil.today()));
                         safeExecute(q);
                         return;
@@ -332,7 +336,9 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_NORM", 2, uid);
-                        SendMessage q = md(m.getChatId(), "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:");
+                        SendMessage q = md(m.getChatId(),
+                                "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:\n" +
+                                        "_Подсказка: «1 день» — сегодня, «2 день» — завтра, … «7 день» — через 6 дней._");
                         q.setReplyMarkup(Keyboards.dateQuickPick("date:setnorm", TimeUtil.today()));
                         safeExecute(q);
                         return;
@@ -411,7 +417,13 @@ public class CoachBot extends TelegramLongPollingBot {
                     safeExecute(sm);
                     return;
                 }
-                String t = text;
+                String t = text.trim();
+                if (!t.matches("^\\d{2}:\\d{2}$")) {
+                    SendMessage sm = md(m.getChatId(),"Неверный формат. Пример: `19:00`.");
+                    sm.setReplyMarkup(Keyboards.backToAdmin());
+                    safeExecute(sm);
+                    return;
+                }
                 SettingsRepo.set("evening_time", t);
                 SendMessage ok = new SendMessage(String.valueOf(m.getChatId()), "Вечерняя рассылка установлена на " + t + " (Екатеринбург).");
                 ok.setReplyMarkup(Keyboards.backToAdmin());
@@ -516,6 +528,21 @@ public class CoachBot extends TelegramLongPollingBot {
             StateRepo.clear(tgId); // при входе в админку чистим состояние
             SendMessage sm = md(chatId, Texts.adminTitle());
             sm.setReplyMarkup(Keyboards.adminPanel(isSuper(tgId)));
+            safeExecute(sm);
+            return;
+        }
+
+        // ===== добавлен обработчик кнопки «⏰ Время рассылки» =====
+        if ("admin:settime".equals(data)) {
+            if (!isSuper(tgId)) {
+                safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов."));
+                return;
+            }
+            StateRepo.set(tgId, "ASK_SET_TIME", 1, "");
+            SendMessage sm = md(chatId,
+                    "Введите время в формате `HH:mm` (часовой пояс: " +
+                            System.getProperty("bot.tz", "Asia/Yekaterinburg") + ").");
+            sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
             return;
         }
@@ -685,25 +712,22 @@ public class CoachBot extends TelegramLongPollingBot {
             renderGroupPicker(chatId, tgId, "pick:setnorm", page, "ASK_SET_NORM", "Выберите пользователя по номеру из списка:");
             return;
         }
-        if (data.startsWith("pick:groupdel:")) {
-            int page = Integer.parseInt(data.substring("pick:groupdel:".length()));
-            renderGroupPicker(chatId, tgId, "pick:groupdel", page, "ASK_GROUP_DEL", "Выберите пользователя по номеру для удаления из группы:");
-            return;
-        }
 
-        // Быстрые даты для админ-визардов
+        // Быстрые даты для админ-визардов (1..7 день; 1 = сегодня)
         if (data.startsWith("date:setcal:") || data.startsWith("date:setplan:") || data.startsWith("date:setnorm:")) {
-            String when = data.substring(data.lastIndexOf(':')+1);
+            String tail = data.substring(data.lastIndexOf(':') + 1);
+            int dayIdx = 1;
+            try { dayIdx = Integer.parseInt(tail); } catch (Exception ignored) {}
+            if (dayIdx < 1) dayIdx = 1;
+            if (dayIdx > 7) dayIdx = 7;
+
             LocalDate base = TimeUtil.today();
-            LocalDate date = switch (when) {
-                case "today" -> base;
-                case "tomorrow" -> base.plusDays(1);
-                case "aftertomorrow" -> base.plusDays(2);
-                default -> base;
-            };
+            LocalDate date = base.plusDays(dayIdx - 1);
 
             var stAdmin2 = StateRepo.get(tgId);
-            if (stAdmin2 == null || !(stAdmin2.type().equals("ASK_SET_CAL") || stAdmin2.type().equals("ASK_SET_PLAN") || stAdmin2.type().equals("ASK_SET_NORM")) || stAdmin2.step()!=2) {
+            if (stAdmin2 == null ||
+                    !(stAdmin2.type().equals("ASK_SET_CAL") || stAdmin2.type().equals("ASK_SET_PLAN") || stAdmin2.type().equals("ASK_SET_NORM")) ||
+                    stAdmin2.step() != 2) {
                 return;
             }
             String uid = stAdmin2.payload(); // шаг 2: payload = uid

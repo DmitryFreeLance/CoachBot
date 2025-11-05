@@ -95,14 +95,24 @@ public class Keyboards {
 
     // Быстрый выбор даты для админ-визардов
     // base = "date:setcal" | "date:setplan" | "date:setnorm"
+    // Рендерим 7 кнопок: 1 день..7 день (1 = сегодня)
     public static InlineKeyboardMarkup dateQuickPick(String base, LocalDate today) {
-        InlineKeyboardButton b1 = btn("Сегодня", base + ":today");
-        InlineKeyboardButton b2 = btn("Завтра",  base + ":tomorrow");
-        InlineKeyboardButton b3 = btn("Послезавтра", base + ":aftertomorrow");
-        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-        rows.add(List.of(b1, b2, b3));
+
+        List<InlineKeyboardButton> r1 = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) {
+            r1.add(btn(i + " день", base + ":" + i));
+        }
+        List<InlineKeyboardButton> r2 = new ArrayList<>();
+        for (int i = 5; i <= 7; i++) {
+            r2.add(btn(i + " день", base + ":" + i));
+        }
+
+        rows.add(r1);
+        rows.add(r2);
         rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;
     }
