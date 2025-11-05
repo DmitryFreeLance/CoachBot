@@ -45,6 +45,7 @@ public class Db {
                 migrateSettingsTable(c);       // k/v -> key/value
                 migrateReportsTable(c);        // полноценная схема reports
                 migrateNormsTables(c);         // создаёт activity_norms и переносит из norms при наличии
+                migrateUserParamsTable(c);     // ✅ МИГРАЦИЯ user_params (новая схема с chest_relaxed и т.д.)
 
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS nutrition_plans(
@@ -92,7 +93,7 @@ public class Db {
                     )
                 """);
 
-                // Таблица для состояний визардов (исправление п.3)
+                // Таблица для состояний визардов
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS user_states(
                       user_id TEXT PRIMARY KEY,
@@ -344,6 +345,98 @@ public class Db {
                             "SELECT user_id,date,"+w+","+s+","+sl+","+by+" FROM norms");
                 } catch (SQLException ignored) {}
             }
+        }
+    }
+
+    /**
+     * Миграция таблицы user_params (используется визард «Мои параметры»).
+     * Целевая схема:
+     *   user_params(
+     *     user_id TEXT PRIMARY KEY,
+     *     weight REAL, waist REAL,
+     *     chest_exhale REAL, chest_relaxed REAL, chest_inhale REAL,
+     *     biceps_relaxed REAL, biceps_flex REAL,
+     *     photo_id TEXT,
+     *     updated_at INTEGER
+     *   )
+     *
+     * Если таблица отсутствует — создаём.
+     * Если присутствует, но нет нужных колонок — создаём user_params_new, копируем доступные поля, меняем.
+     */
+    private static void migrateUserParamsTable(Connection c) throws SQLException {
+        boolean exists = tableExists(c, "user_params");
+        if (!exists) {
+            try (Statement st = c.createStatement()) {
+                st.execute("""
+                    CREATE TABLE user_params(
+                      user_id TEXT PRIMARY KEY,
+                      weight REAL,
+                      waist REAL,
+                      chest_exhale REAL,
+                      chest_relaxed REAL,
+                      chest_inhale REAL,
+                      biceps_relaxed REAL,
+                      biceps_flex REAL,
+                      photo_id TEXT,
+                      updated_at INTEGER
+                    )
+                """);
+            }
+            return;
+        }
+
+        String[] required = {
+                "user_id","weight","waist",
+                "chest_exhale","chest_relaxed","chest_inhale",
+                "biceps_relaxed","biceps_flex",
+                "photo_id","updated_at"
+        };
+        boolean ok = true;
+        for (String col : required) if (!tableHasColumn(c, "user_params", col)) { ok = false; break; }
+        if (ok) return;
+
+        try (Statement st = c.createStatement()) {
+            st.execute("""
+                CREATE TABLE user_params_new(
+                  user_id TEXT PRIMARY KEY,
+                  weight REAL,
+                  waist REAL,
+                  chest_exhale REAL,
+                  chest_relaxed REAL,
+                  chest_inhale REAL,
+                  biceps_relaxed REAL,
+                  biceps_flex REAL,
+                  photo_id TEXT,
+                  updated_at INTEGER
+                )
+            """);
+
+            // Подготовим селект с подстановкой NULL для отсутствующих колонок
+            String selWeight = tableHasColumn(c,"user_params","weight") ? "weight" : "NULL";
+            String selWaist  = tableHasColumn(c,"user_params","waist")  ? "waist"  : "NULL";
+
+            String selChEx   = tableHasColumn(c,"user_params","chest_exhale")  ? "chest_exhale"  : "NULL";
+            // во избежание несовпадений имён — пробуем возможные старые варианты
+            String selChRl   =
+                    tableHasColumn(c,"user_params","chest_relaxed")   ? "chest_relaxed" :
+                            (tableHasColumn(c,"user_params","chest_relax")    ? "chest_relax" :
+                                    tableHasColumn(c,"user_params","chest_rel")      ? "chest_rel" : "NULL");
+            String selChIn   = tableHasColumn(c,"user_params","chest_inhale")  ? "chest_inhale"  : "NULL";
+
+            String selBiRl   = tableHasColumn(c,"user_params","biceps_relaxed")? "biceps_relaxed": "NULL";
+            String selBiFx   = tableHasColumn(c,"user_params","biceps_flex")   ? "biceps_flex"   : "NULL";
+
+            String selPhoto  = tableHasColumn(c,"user_params","photo_id")      ? "photo_id"      : "NULL";
+            String selUpd    = tableHasColumn(c,"user_params","updated_at")    ? "updated_at"    : "NULL";
+
+            String insert = "INSERT OR IGNORE INTO user_params_new(" +
+                    "user_id,weight,waist,chest_exhale,chest_relaxed,chest_inhale,biceps_relaxed,biceps_flex,photo_id,updated_at" +
+                    ") SELECT user_id,"+selWeight+","+selWaist+","+selChEx+","+selChRl+","+selChIn+","+
+                    selBiRl+","+selBiFx+","+selPhoto+","+selUpd+" FROM user_params";
+            st.execute(insert);
+
+            st.execute("DROP TABLE user_params");
+            st.execute("ALTER TABLE user_params_new RENAME TO user_params");
         }
     }
 

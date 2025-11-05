@@ -8,6 +8,8 @@ import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.*;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
 import java.io.File;
 import java.sql.Connection;
@@ -85,11 +87,12 @@ public class CoachBot extends TelegramLongPollingBot {
 • 🏋️ *Тренировка* — список упражнений с галочками.  
 • 📊 *Нормы активности* — вода, шаги и сон на день.  
 • 📝 *Отчёт* — заполни дневной отчёт: сон → шаги → вода → КБЖУ.  
+• 📏 *Мои параметры* — пошаговый ввод веса и замеров + фото.  
 • 📞 *Контакты* — контакты твоего тренера.
 
 *2) Ежедневные напоминания*  
 • ⏰ Утро 08:00 — сценарий дня (питание, тренировка, нормы и мотивация).  
-• 🌆 Вечер — напоминание с кнопкой «Заполнить отчёт».
+• 🌆 Вечер — напоминание с кнопкой «Заполнить отчёт» (время задаёт тренер).
 
 *3) Отчёт*  
 • В день можно отправить *только 1 отчёт*.  
@@ -139,6 +142,7 @@ public class CoachBot extends TelegramLongPollingBot {
         if (text.startsWith("/start") || text.startsWith("/admin") || text.startsWith("/superadmin")) {
             StateRepo.clear(tgId); // всегда выходим из любых визардов
             if (text.startsWith("/start")) {
+                // Приветствие: одно сообщение с фото 3.png + текст
                 sendStartPhoto(m.getChatId(), m.getFrom().getFirstName(), isAdmin(tgId), isSuper(tgId));
                 return;
             }
@@ -150,7 +154,7 @@ public class CoachBot extends TelegramLongPollingBot {
                     return;
                 }
                 SendMessage sm = md(m.getChatId(), Texts.adminTitle());
-                sm.setReplyMarkup(Keyboards.adminPanel()); // без супер-кнопок
+                sm.setReplyMarkup(Keyboards.adminPanel());
                 safeExecute(sm);
                 return;
             }
@@ -161,7 +165,7 @@ public class CoachBot extends TelegramLongPollingBot {
                     safeExecute(sm);
                     return;
                 }
-                SendMessage sm = md(m.getChatId(), "🛠 Панель супер-админа. Выберите действие:");
+                SendMessage sm = md(m.getChatId(), "🛡 Супер-админ панель. Выберите действие:");
                 sm.setReplyMarkup(Keyboards.superAdminPanel());
                 safeExecute(sm);
                 return;
@@ -191,6 +195,21 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
+        // --- пользовательский визард «Мои параметры»
+        if (stUser != null && "PARAMS".equals(stUser.type())) {
+            if (text.startsWith("/")) {
+                SendMessage warn = new SendMessage(String.valueOf(m.getChatId()),
+                        "Сейчас идёт ввод параметров. Отправьте данные или нажмите «✖️ Отменить ввод».");
+                warn.setReplyMarkup(Keyboards.paramsCancelOnly());
+                safeExecute(warn);
+                return;
+            }
+            Object obj = ParamsWizard.onAny(tgId, m.getChatId(), m);
+            if (obj instanceof SendMessage sm) safeExecute(sm);
+            else if (obj instanceof SendPhoto sp) safeExecute(sp);
+            return;
+        }
+
         // --- состояния админа
         var stAdmin = StateRepo.get(tgId);
         if (stAdmin != null) {
@@ -209,9 +228,15 @@ public class CoachBot extends TelegramLongPollingBot {
                 return;
             }
 
-            // Добавить в группу: теперь выбор из списка, далее номер
+            // Добавить в группу — выбор по номеру из общего списка
             if ("ASK_GROUP_ADD".equals(stAdmin.type())) {
                 if (stAdmin.step() == 1) {
+                    if (text.startsWith("/")) {
+                        SendMessage warn = md(m.getChatId(),"Введите *номер* пользователя из списка.");
+                        warn.setReplyMarkup(Keyboards.backToAdmin());
+                        safeExecute(warn);
+                        return;
+                    }
                     Integer idx = parseInt(text);
                     String[] ids = stAdmin.payload().split(",");
                     if (idx == null || idx < 1 || idx > ids.length) {
@@ -232,46 +257,25 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // Добавить админа (через /superadmin панель)
+            // Добавить админа — ввод tg_id (в /superadmin)
             if ("ASK_ADMIN_ADD".equals(stAdmin.type())) {
                 if (stAdmin.step() == 1) {
                     if (text.startsWith("/")) {
                         SendMessage warn = md(m.getChatId(),"Введите *tg_id* пользователя для назначения администратором.");
-                        warn.setReplyMarkup(Keyboards.superAdminBack());
+                        warn.setReplyMarkup(Keyboards.backToAdmin());
                         safeExecute(warn);
                         return;
                     }
                     String uid = text.replace("@","").trim();
                     if (uid.isEmpty()) {
                         SendMessage err = md(m.getChatId(),"Укажите корректный *tg_id*.");
-                        err.setReplyMarkup(Keyboards.superAdminBack());
+                        err.setReplyMarkup(Keyboards.backToAdmin());
                         safeExecute(err);
                         return;
                     }
                     UserRepo.ensureAdmin(uid);
                     SendMessage ok = md(m.getChatId(), "Админ добавлен: " + uid);
-                    ok.setReplyMarkup(Keyboards.superAdminBack());
-                    safeExecute(ok);
-                    StateRepo.clear(tgId);
-                    return;
-                }
-            }
-
-            // Удалить админа (через /superadmin панель)
-            if ("ASK_ADMIN_DEL".equals(stAdmin.type())) {
-                if (stAdmin.step() == 1) {
-                    Integer idx = parseInt(text);
-                    String[] ids = stAdmin.payload().split(",");
-                    if (idx == null || idx < 1 || idx > ids.length) {
-                        SendMessage err = new SendMessage(String.valueOf(m.getChatId()), "Введите номер из списка (1.." + ids.length + ").");
-                        err.setReplyMarkup(Keyboards.superAdminBack());
-                        safeExecute(err);
-                        return;
-                    }
-                    String uid = ids[idx - 1];
-                    UserRepo.setRole(uid, Roles.USER);
-                    SendMessage ok = md(m.getChatId(), "Админ удалён: " + uid);
-                    ok.setReplyMarkup(Keyboards.superAdminBack());
+                    ok.setReplyMarkup(Keyboards.backToAdmin());
                     safeExecute(ok);
                     StateRepo.clear(tgId);
                     return;
@@ -292,9 +296,7 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_CAL", 2, uid);
-                        SendMessage q = md(m.getChatId(),
-                                "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:\n" +
-                                        "_Подсказка: «1 день» — сегодня, «2 день» — завтра, … «7 день» — через 6 дней._");
+                        SendMessage q = md(m.getChatId(), "Укажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
                         q.setReplyMarkup(Keyboards.dateQuickPick("date:setcal", TimeUtil.today()));
                         safeExecute(q);
                         return;
@@ -328,9 +330,7 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_PLAN", 2, uid);
-                        SendMessage q = md(m.getChatId(),
-                                "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:\n" +
-                                        "_Подсказка: «1 день» — сегодня, «2 день» — завтра, … «7 день» — через 6 дней._");
+                        SendMessage q = md(m.getChatId(), "Укажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
                         q.setReplyMarkup(Keyboards.dateQuickPick("date:setplan", TimeUtil.today()));
                         safeExecute(q);
                         return;
@@ -364,9 +364,7 @@ public class CoachBot extends TelegramLongPollingBot {
                         }
                         String uid = ids[idx - 1];
                         StateRepo.set(tgId, "ASK_SET_NORM", 2, uid);
-                        SendMessage q = md(m.getChatId(),
-                                "Укажите дату в формате `dd.MM.yyyy` или выберите кнопку ниже:\n" +
-                                        "_Подсказка: «1 день» — сегодня, «2 день» — завтра, … «7 день» — через 6 дней._");
+                        SendMessage q = md(m.getChatId(), "Укажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
                         q.setReplyMarkup(Keyboards.dateQuickPick("date:setnorm", TimeUtil.today()));
                         safeExecute(q);
                         return;
@@ -386,7 +384,51 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // Время рассылки (для своей группы — доступно всем админам)
+            // Удалить из группы
+            if ("ASK_GROUP_DEL".equals(stAdmin.type())) {
+                if (stAdmin.step() == 1) {
+                    Integer idx = parseInt(text);
+                    String[] ids = stAdmin.payload().split(",");
+                    if (idx == null || idx < 1 || idx > ids.length) {
+                        SendMessage err = new SendMessage(String.valueOf(m.getChatId()), "Введите номер из списка (1.." + ids.length + ").");
+                        err.setReplyMarkup(Keyboards.backToAdmin());
+                        safeExecute(err);
+                        return;
+                    }
+                    String uid = ids[idx - 1];
+                    boolean ok = GroupRepo.removeFromAdmin(tgId, uid);
+                    SendMessage done = new SendMessage(String.valueOf(m.getChatId()),
+                            ok ? ("Пользователь " + uid + " удалён из вашей группы.") :
+                                    "Такой пары (пользователь — вы как тренер) нет.");
+                    done.setReplyMarkup(Keyboards.backToAdmin());
+                    safeExecute(done);
+                    StateRepo.clear(tgId);
+                    return;
+                }
+            }
+
+            // Удалить админа
+            if ("ASK_ADMIN_DEL".equals(stAdmin.type())) {
+                if (stAdmin.step() == 1) {
+                    Integer idx = parseInt(text);
+                    String[] ids = stAdmin.payload().split(",");
+                    if (idx == null || idx < 1 || idx > ids.length) {
+                        SendMessage err = new SendMessage(String.valueOf(m.getChatId()), "Введите номер из списка (1.." + ids.length + ").");
+                        err.setReplyMarkup(Keyboards.backToAdmin());
+                        safeExecute(err);
+                        return;
+                    }
+                    String uid = ids[idx - 1];
+                    UserRepo.setRole(uid, Roles.USER);
+                    SendMessage ok = md(m.getChatId(), "Админ удалён: " + uid);
+                    ok.setReplyMarkup(Keyboards.backToAdmin());
+                    safeExecute(ok);
+                    StateRepo.clear(tgId);
+                    return;
+                }
+            }
+
+            // Время рассылки — доступно всем админам, сохраняем индивидуально
             if ("ASK_SET_TIME".equals(stAdmin.type())) {
                 if (!isAdmin(tgId)) {
                     SendMessage sm = md(m.getChatId(), "Недостаточно прав.");
@@ -402,18 +444,55 @@ public class CoachBot extends TelegramLongPollingBot {
                     return;
                 }
                 String t = text.trim();
-                if (!t.matches("^\\d{2}:\\d{2}$")) {
-                    SendMessage sm = md(m.getChatId(),"Неверный формат. Пример: `19:00`.");
+                if (!t.matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
+                    SendMessage sm = md(m.getChatId(),"Неверный формат. Введите `HH:mm`, например `19:00`.");
                     sm.setReplyMarkup(Keyboards.backToAdmin());
                     safeExecute(sm);
                     return;
                 }
-                SettingsRepo.set("evening_time:" + tgId, t);
+                SettingsRepo.set("evening_time:"+tgId, t);
                 SendMessage ok = new SendMessage(String.valueOf(m.getChatId()), "Вечерняя рассылка для вашей группы установлена на " + t + ".");
                 ok.setReplyMarkup(Keyboards.backToAdmin());
                 safeExecute(ok);
                 StateRepo.clear(tgId);
                 return;
+            }
+
+            // Просмотр отчётов группы — выбор по номеру (только цифрой)
+            if ("ASK_REPORTS_VIEW".equals(stAdmin.type())) {
+                if (stAdmin.step() == 1) {
+                    Integer idx = parseInt(text);
+                    String[] ids = stAdmin.payload().split(",");
+                    if (idx == null || idx < 1 || idx > ids.length) {
+                        SendMessage err = new SendMessage(String.valueOf(m.getChatId()), "Введите номер из списка (1.." + ids.length + ").");
+                        err.setReplyMarkup(Keyboards.backToAdmin());
+                        safeExecute(err);
+                        return;
+                    }
+                    String uid = ids[idx - 1];
+                    sendReportsPage(tgId, m.getChatId(), uid, 1, true);
+                    StateRepo.clear(tgId);
+                    return;
+                }
+            }
+
+            // Просмотр параметров группы — выбор по номеру (только цифрой)
+            if ("ASK_PARAMS_VIEW".equals(stAdmin.type())) {
+                if (stAdmin.step() == 1) {
+                    Integer idx = parseInt(text);
+                    String[] ids = stAdmin.payload().split(",");
+                    if (idx == null || idx < 1 || idx > ids.length) {
+                        SendMessage err = new SendMessage(String.valueOf(m.getChatId()), "Введите номер из списка (1.." + ids.length + ").");
+                        err.setReplyMarkup(Keyboards.backToAdmin());
+                        safeExecute(err);
+                        return;
+                    }
+                    String uid = ids[idx - 1];
+                    // показать параметры пользователя + фото (если есть)
+                    showUserParamsForAdmin(tgId, m.getChatId(), uid);
+                    StateRepo.clear(tgId);
+                    return;
+                }
             }
 
             // Рабочие шаги визардов
@@ -422,6 +501,23 @@ public class CoachBot extends TelegramLongPollingBot {
                 case "SET_PLAN" -> { var sm = PlanWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
                 case "SET_NORM" -> { var sm = NormWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
             }
+        }
+
+        // --- прочие команды
+        if (text.startsWith("/settime")) { // быстрый способ для админов
+            if (!isAdmin(tgId)) { safeExecute(md(m.getChatId(),"Команда доступна только администраторам.")); return; }
+            String[] p = text.split("\\s+");
+            if (p.length < 2 || !p[1].matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
+                SendMessage err = md(m.getChatId(),"Укажите время в формате `HH:mm`, напр. `19:30`.");
+                err.setReplyMarkup(Keyboards.backToMenu());
+                safeExecute(err);
+                return;
+            }
+            SettingsRepo.set("evening_time:"+tgId, p[1]);
+            SendMessage ok = new SendMessage(String.valueOf(m.getChatId()), "Вечерняя рассылка для вашей группы установлена на " + p[1] + ".");
+            ok.setReplyMarkup(Keyboards.backToMenu());
+            safeExecute(ok);
+            return;
         }
 
         // по умолчанию
@@ -439,6 +535,8 @@ public class CoachBot extends TelegramLongPollingBot {
                  "ASK_GROUP_ADD","ASK_GROUP_DEL",
                  "ASK_ADMIN_ADD","ASK_ADMIN_DEL",
                  "ASK_SET_TIME",
+                 "ASK_REPORTS_VIEW",
+                 "ASK_PARAMS_VIEW",
                  "SET_CAL","SET_PLAN","SET_NORM" -> true;
             default -> false;
         };
@@ -446,7 +544,7 @@ public class CoachBot extends TelegramLongPollingBot {
 
     private boolean adminWizardAllows(String type, String data) {
         // Разрешаем выход в любое время
-        if (data.equals("menu:main") || data.equals("menu:admin") || data.equals("menu:super")) return true;
+        if (data.equals("menu:main") || data.equals("menu:admin")) return true;
 
         return switch (type) {
             case "CONTACT" -> data.equals("contact:cancel") || data.equals("menu:admin");
@@ -454,10 +552,15 @@ public class CoachBot extends TelegramLongPollingBot {
             case "ASK_SET_PLAN" -> data.startsWith("pick:setplan") || data.startsWith("date:setplan") || data.equals("menu:admin");
             case "ASK_SET_NORM" -> data.startsWith("pick:setnorm") || data.startsWith("date:setnorm") || data.equals("menu:admin");
             case "ASK_GROUP_DEL" -> data.startsWith("pick:groupdel") || data.equals("menu:admin");
-            case "ASK_GROUP_ADD" -> data.startsWith("pick:addgroup") || data.equals("menu:admin");
-            case "ASK_ADMIN_ADD" -> data.equals("menu:super");
-            case "ASK_ADMIN_DEL" -> data.startsWith("pick:admindel") || data.equals("menu:super");
+            case "ASK_GROUP_ADD" -> data.startsWith("pick:groupadd") || data.equals("menu:admin");
+            case "ASK_ADMIN_ADD" -> data.equals("menu:admin");
+            case "ASK_ADMIN_DEL" -> data.startsWith("pick:admindel") || data.equals("menu:admin");
             case "ASK_SET_TIME" -> data.equals("menu:admin");
+            case "ASK_REPORTS_VIEW" ->
+                // кнопок «Выбрать №…» больше нет, разрешаем только пагинацию списка и возврат
+                    data.startsWith("pick:reports") || data.equals("menu:admin");
+            case "ASK_PARAMS_VIEW"  ->
+                    data.startsWith("pick:params")  || data.equals("menu:admin");
             case "SET_PLAN" -> data.equals("plan:finish") || data.equals("menu:admin");
             case "SET_CAL", "SET_NORM" -> data.equals("menu:admin");
             default -> true;
@@ -468,9 +571,41 @@ public class CoachBot extends TelegramLongPollingBot {
         SendMessage sm = new SendMessage(String.valueOf(chatId),
                 "Вы в процессе админ-действия. Завершите текущий шаг или вернитесь в админ-панель.");
         if ("CONTACT".equals(type)) sm.setReplyMarkup(Keyboards.contactCancelOnly());
-        else if ("ASK_ADMIN_ADD".equals(type) || "ASK_ADMIN_DEL".equals(type)) sm.setReplyMarkup(Keyboards.superAdminBack());
         else sm.setReplyMarkup(Keyboards.backToAdmin());
         safeExecute(sm);
+    }
+
+    private InlineKeyboardButton btn(String text, String cb) {
+        InlineKeyboardButton b = new InlineKeyboardButton();
+        b.setText(text);
+        b.setCallbackData(cb);
+        return b;
+    }
+
+    /** Строим клавиатуру списка с персонифицированными кнопками выбора пользователя */
+    private InlineKeyboardMarkup pickerKeyboard(String base, int page, int pages, List<UserRepo.UserRow> rows) {
+        String choosePrefix = base.replace("pick:", "choose:"); // напр. pick:params -> choose:params
+        List<List<InlineKeyboardButton>> kb = new ArrayList<>();
+
+        int i = 1;
+        for (UserRepo.UserRow r : rows) {
+            String label = "Выбрать №" + (i++);
+            kb.add(List.of(btn(label, choosePrefix + ":" + r.id)));
+        }
+
+        // навигация
+        List<InlineKeyboardButton> nav = new ArrayList<>();
+        nav.add(btn("⬅️", base + ":" + Math.max(1, page - 1)));
+        nav.add(btn("📄 " + page + "/" + pages, "noop"));
+        nav.add(btn("➡️", base + ":" + Math.min(pages, page + 1)));
+        kb.add(nav);
+
+        // назад
+        kb.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(kb);
+        return m;
     }
 
     private void handleCallback(CallbackQuery cq) throws Exception {
@@ -485,7 +620,6 @@ public class CoachBot extends TelegramLongPollingBot {
         // ===== быстрый выход в меню =====
         if (data.equals("menu:main")) {
             StateRepo.clear(tgId); // чистим состояние
-            // текст без фото (чтобы избежать «двойного /start»)
             SendMessage sm = md(chatId, Texts.start(cq.getFrom().getFirstName()));
             sm.setReplyMarkup(Keyboards.inlineMainMenu(isAdmin(tgId), isSuper(tgId)));
             safeExecute(sm);
@@ -500,15 +634,15 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
         if (data.equals("menu:super")) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Команда только для главных админов.")); return; }
+            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
             StateRepo.clear(tgId);
-            SendMessage sm = md(chatId, "🛠 Панель супер-админа. Выберите действие:");
+            SendMessage sm = md(chatId, "🛡 Супер-админ панель. Выберите действие:");
             sm.setReplyMarkup(Keyboards.superAdminPanel());
             safeExecute(sm);
             return;
         }
 
-        // ===== блокировка во время отчёта =====
+        // ===== защита во время отчёта =====
         var stUser = StateRepo.get(tgId);
         if (stUser != null && "REPORT".equals(stUser.type())) {
             if (!"report:cancel".equals(data)) {
@@ -582,6 +716,25 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
+        if ("menu:params".equals(data)) {
+            Object obj = ParamsWizard.start(tgId, chatId);
+            if (obj instanceof SendMessage sm) safeExecute(sm);
+            else if (obj instanceof SendPhoto sp) safeExecute(sp);
+            return;
+        }
+
+        // Параметры — спец кнопки
+        if ("params:cancel".equals(data)) {
+            SendMessage sm = ParamsWizard.cancel(tgId, chatId);
+            safeExecute(sm);
+            return;
+        }
+        if ("params:skip".equals(data)) { // пропуск фото
+            SendMessage sm = ParamsWizard.skipPhoto(tgId, chatId);
+            safeExecute(sm);
+            return;
+        }
+
         // Моя группа
         if ("admin:my".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
@@ -597,94 +750,134 @@ public class CoachBot extends TelegramLongPollingBot {
         // Старт визардов
         if ("admin:groupadd".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            renderAllUsersPickerForAdd(chatId, tgId, 1);
+            renderAllUsersPicker(chatId, tgId, "pick:groupadd", 1, "ASK_GROUP_ADD", "Выберите пользователя по номеру для добавления в вашу группу:");
             return;
         }
         if ("admin:groupdel".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            renderGroupPicker(chatId, tgId, "pick:groupdel", 1, "ASK_GROUP_DEL", "Выберите пользователя по номеру для удаления из группы:");
+            renderGroupPicker(chatId, tgId, "pick:groupdel", 1, "ASK_GROUP_DEL", "Выберите пользователя по номеру для удаления из группы:", true);
             return;
         }
         if ("admin:setcal".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            renderGroupPicker(chatId, tgId, "pick:setcal", 1, "ASK_SET_CAL", "Выберите пользователя по номеру из вашей группы:");
+            renderGroupPicker(chatId, tgId, "pick:setcal", 1, "ASK_SET_CAL", "Выберите пользователя по номеру из списка:", true);
             return;
         }
         if ("admin:setplan".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            renderGroupPicker(chatId, tgId, "pick:setplan", 1, "ASK_SET_PLAN", "Выберите пользователя по номеру из вашей группы:");
+            renderGroupPicker(chatId, tgId, "pick:setplan", 1, "ASK_SET_PLAN", "Выберите пользователя по номеру из списка:", true);
             return;
         }
         if ("admin:setnorma".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            renderGroupPicker(chatId, tgId, "pick:setnorm", 1, "ASK_SET_NORM", "Выберите пользователя по номеру из вашей группы:");
+            renderGroupPicker(chatId, tgId, "pick:setnorm", 1, "ASK_SET_NORM", "Выберите пользователя по номеру из списка:", true);
             return;
         }
-
-        // Контакты тренера
         if ("admin:contact".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             safeExecute(com.example.coachbot.service.ContactWizard.start(tgId, chatId));
             return;
         }
-
-        // Время рассылки — доступно всем админам (персонифицировано)
+        if ("admin:reports".equals(data)) {
+            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
+            // БЕЗ кнопок «Выбрать №…»: ввод только числом
+            renderGroupPicker(chatId, tgId, "pick:reports", 1, "ASK_REPORTS_VIEW",
+                    "Выберите пользователя по номеру для просмотра отчётов (введите номер сообщением).", false);
+            return;
+        }
+        if ("admin:params".equals(data)) {
+            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
+            // БЕЗ кнопок «Выбрать №…»: ввод только числом
+            renderGroupPicker(chatId, tgId, "pick:params", 1, "ASK_PARAMS_VIEW",
+                    "Выберите пользователя по номеру для просмотра параметров (введите номер сообщением).", false);
+            return;
+        }
         if ("admin:settime".equals(data)) {
-            if (!isAdmin(tgId)) {
-                safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов."));
-                return;
-            }
+            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             StateRepo.set(tgId, "ASK_SET_TIME", 1, "");
-            String current = SettingsRepo.get("evening_time:" + tgId, "19:00");
-            SendMessage sm = md(chatId,
-                    "Введите время для *вашей группы* в формате `HH:mm` (часовой пояс: " +
-                            System.getProperty("bot.tz", "Asia/Yekaterinburg") + ").\n" +
-                            "Текущее значение: `" + current + "`");
+            SendMessage sm = md(chatId, "Введите время *вечерней рассылки* для вашей группы в формате `HH:mm` (напр.: `19:00`).");
             sm.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(sm);
             return;
         }
 
+        // СУПЕР-АДМИН
+        if ("super:add".equals(data)) {
+            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
+            StateRepo.set(tgId, "ASK_ADMIN_ADD", 1, "");
+            SendMessage sm = md(chatId, "Введите *tg_id* пользователя для назначения администратором.");
+            sm.setReplyMarkup(Keyboards.superAdminBack());
+            safeExecute(sm);
+            return;
+        }
+        if ("super:del".equals(data)) {
+            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
+            renderAdminsPicker(tgId, chatId, "pick:admindel", 1, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
+            return;
+        }
+
+        // ====== КНОПКИ «choose:*» ДЛЯ reports/params УДАЛЕНЫ — выбор только цифрой ======
+
         // Пагинация пиков
         if (data.startsWith("pick:setcal:")) {
             int page = Integer.parseInt(data.substring("pick:setcal:".length()));
-            renderGroupPicker(chatId, tgId, "pick:setcal", page, "ASK_SET_CAL", "Выберите пользователя по номеру из вашей группы:");
+            renderGroupPicker(chatId, tgId, "pick:setcal", page, "ASK_SET_CAL", "Выберите пользователя по номеру из списка:", true);
             return;
         }
         if (data.startsWith("pick:setplan:")) {
             int page = Integer.parseInt(data.substring("pick:setplan:".length()));
-            renderGroupPicker(chatId, tgId, "pick:setplan", page, "ASK_SET_PLAN", "Выберите пользователя по номеру из вашей группы:");
+            renderGroupPicker(chatId, tgId, "pick:setplan", page, "ASK_SET_PLAN", "Выберите пользователя по номеру из списка:", true);
             return;
         }
         if (data.startsWith("pick:setnorm:")) {
             int page = Integer.parseInt(data.substring("pick:setnorm:".length()));
-            renderGroupPicker(chatId, tgId, "pick:setnorm", page, "ASK_SET_NORM", "Выберите пользователя по номеру из вашей группы:");
+            renderGroupPicker(chatId, tgId, "pick:setnorm", page, "ASK_SET_NORM", "Выберите пользователя по номеру из списка:", true);
             return;
         }
-        if (data.startsWith("pick:addgroup:")) {
-            int page = Integer.parseInt(data.substring("pick:addgroup:".length()));
-            renderAllUsersPickerForAdd(chatId, tgId, page);
+        if (data.startsWith("pick:groupdel:")) {
+            int page = Integer.parseInt(data.substring("pick:groupdel:".length()));
+            renderGroupPicker(chatId, tgId, "pick:groupdel", page, "ASK_GROUP_DEL", "Выберите пользователя по номеру для удаления из группы:", true);
+            return;
+        }
+        if (data.startsWith("pick:groupadd:")) {
+            int page = Integer.parseInt(data.substring("pick:groupadd:".length()));
+            renderAllUsersPicker(chatId, tgId, "pick:groupadd", page, "ASK_GROUP_ADD", "Выберите пользователя по номеру для добавления в вашу группу:");
+            return;
+        }
+        if (data.startsWith("pick:admindel:")) {
+            int page = Integer.parseInt(data.substring("pick:admindel:".length()));
+            renderAdminsPicker(tgId, chatId, "pick:admindel", page, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
+            return;
+        }
+        if (data.startsWith("pick:reports:")) {
+            int page = Integer.parseInt(data.substring("pick:reports:".length()));
+            // без кнопок «Выбрать №…»
+            renderGroupPicker(chatId, tgId, "pick:reports", page, "ASK_REPORTS_VIEW",
+                    "Выберите пользователя по номеру для просмотра отчётов (введите номер сообщением).", false);
+            return;
+        }
+        if (data.startsWith("pick:params:")) {
+            int page = Integer.parseInt(data.substring("pick:params:".length()));
+            // без кнопок «Выбрать №…»
+            renderGroupPicker(chatId, tgId, "pick:params", page, "ASK_PARAMS_VIEW",
+                    "Выберите пользователя по номеру для просмотра параметров (введите номер сообщением).", false);
             return;
         }
 
-        // Быстрые даты для админ-визардов (1..7 день; 1 = сегодня)
+        // Быстрые даты (1..7 дней вперёд)
         if (data.startsWith("date:setcal:") || data.startsWith("date:setplan:") || data.startsWith("date:setnorm:")) {
-            String tail = data.substring(data.lastIndexOf(':') + 1);
-            int dayIdx = 1;
-            try { dayIdx = Integer.parseInt(tail); } catch (Exception ignored) {}
-            if (dayIdx < 1) dayIdx = 1;
-            if (dayIdx > 7) dayIdx = 7;
-
+            String sDay = data.substring(data.lastIndexOf(':')+1);
+            int day;
+            try { day = Integer.parseInt(sDay); } catch (Exception e) { day = 1; }
+            day = Math.max(1, Math.min(7, day));
             LocalDate base = TimeUtil.today();
-            LocalDate date = base.plusDays(dayIdx - 1);
+            LocalDate date = base.plusDays(day - 1);
 
             var stAdmin2 = StateRepo.get(tgId);
-            if (stAdmin2 == null ||
-                    !(stAdmin2.type().equals("ASK_SET_CAL") || stAdmin2.type().equals("ASK_SET_PLAN") || stAdmin2.type().equals("ASK_SET_NORM")) ||
-                    stAdmin2.step() != 2) {
+            if (stAdmin2 == null || !(stAdmin2.type().equals("ASK_SET_CAL") || stAdmin2.type().equals("ASK_SET_PLAN") || stAdmin2.type().equals("ASK_SET_NORM")) || stAdmin2.step()!=2) {
                 return;
             }
-            String uid = stAdmin2.payload(); // шаг 2: payload = uid
+            String uid = stAdmin2.payload();
             if (data.startsWith("date:setcal:")) {
                 safeExecute(CaloriesWizard.start(tgId, chatId, uid, date));
             } else if (data.startsWith("date:setplan:")) {
@@ -695,38 +888,24 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // ===== СУПЕР-АДМИНКА =====
+        // Напомнить пользователю обновить параметры
+        if (data.startsWith("params:remind:")) {
+            String uid = data.substring("params:remind:".length());
+            // доступ только своему пользователю или супер-админу
+            String owner = GroupRepo.adminOf(uid);
+            if (owner == null || (!owner.equals(tgId) && !isSuper(tgId))) {
+                safeExecute(new SendMessage(String.valueOf(chatId), "Нет доступа."));
+                return;
+            }
+            SendMessage toUser = new SendMessage(uid,
+                    "🔔 Привет! Внеси, пожалуйста, *сегодня* свои параметры в боте: вес, талию, грудь и бицепсы + фото. " +
+                            "Это займёт 2–3 минуты и поможет отслеживать прогресс. 💪");
+            toUser.setReplyMarkup(Keyboards.inlineGoParams());
+            safeExecute(toUser);
 
-        // Открыть панель супер-админа по кнопке (если решишь добавить в UI)
-        if ("super:panel".equals(data)) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
-            StateRepo.clear(tgId);
-            SendMessage sm = md(chatId, "🛠 Панель супер-админа. Выберите действие:");
-            sm.setReplyMarkup(Keyboards.superAdminPanel());
-            safeExecute(sm);
-            return;
-        }
-
-        // Добавить админа
-        if ("super:add".equals(data)) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
-            StateRepo.set(tgId, "ASK_ADMIN_ADD", 1, "");
-            SendMessage sm = md(chatId, "Введите *tg_id* пользователя для назначения администратором.");
-            sm.setReplyMarkup(Keyboards.superAdminBack());
-            safeExecute(sm);
-            return;
-        }
-
-        // Удалить админа: список с пагинацией
-        if ("super:del".equals(data)) {
-            if (!isSuper(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для главных админов.")); return; }
-            renderAdminsPicker(tgId, chatId, "pick:admindel", 1, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
-            return;
-        }
-        if (data.startsWith("pick:admindel:")) {
-            if (!isSuper(tgId)) { return; }
-            int page = Integer.parseInt(data.substring("pick:admindel:".length()));
-            renderAdminsPicker(tgId, chatId, "pick:admindel", page, "ASK_ADMIN_DEL", "Выберите администратора по номеру для снятия прав:");
+            SendMessage back = new SendMessage(String.valueOf(chatId), "Напоминание отправлено пользователю " + uid + ".");
+            back.setReplyMarkup(Keyboards.backToAdmin());
+            safeExecute(back);
             return;
         }
 
@@ -749,7 +928,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Пагинация отчётов
+        // Пагинация отчётов (внутри уже один отчёт на страницу)
         if (data.startsWith("reports:")) {
             String[] p = data.split(":");
             String uid = p[1];
@@ -772,7 +951,8 @@ public class CoachBot extends TelegramLongPollingBot {
         return name + " | " + tag + " | " + r.id;
     }
 
-    private void renderGroupPicker(long chatId, String adminId, String base, int page, String armStateType, String prompt) throws Exception {
+    // ОБНОВЛЕНО: параметр withChooseButtons — для reports/params выключаем кнопки «Выбрать №…»
+    private void renderGroupPicker(long chatId, String adminId, String base, int page, String armStateType, String prompt, boolean withChooseButtons) throws Exception {
         int size = 10;
         int total = countGroupUsers(adminId);
         if (total <= 0) {
@@ -794,9 +974,20 @@ public class CoachBot extends TelegramLongPollingBot {
             sb.append(i++).append(". ").append(formatRow(r)).append("\n");
         }
         StateRepo.set(adminId, armStateType, 1, payload.toString());
-        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt);
-        msg.setReplyMarkup(Keyboards.pager(base, page, pages));
-        safeExecute(msg);
+
+        if (withChooseButtons) {
+            // старый вариант: с кнопками «Выбрать №…»
+            SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\n_Можно нажать «Выбрать №…» ниже._");
+            msg.setParseMode(ParseMode.MARKDOWN);
+            msg.setReplyMarkup(pickerKeyboard(base, page, pages, rows));
+            safeExecute(msg);
+        } else {
+            // новый вариант: ТОЛЬКО ввод номера с клавиатуры + пагинация, без кнопок выбора
+            SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\n_Введите номер сообщением. Кнопок выбора нет._");
+            msg.setParseMode(ParseMode.MARKDOWN);
+            msg.setReplyMarkup(Keyboards.pager(base, page, pages));
+            safeExecute(msg);
+        }
     }
 
     private void renderAdminsPicker(String adminId, long chatId, String base, int page, String armStateType, String prompt) throws Exception {
@@ -804,7 +995,7 @@ public class CoachBot extends TelegramLongPollingBot {
         int total = UserRepo.countAdmins();
         if (total <= 0) {
             SendMessage empty = new SendMessage(String.valueOf(chatId), "Список админов пуст.");
-            empty.setReplyMarkup(Keyboards.superAdminBack());
+            empty.setReplyMarkup(Keyboards.backToAdmin());
             safeExecute(empty);
             return;
         }
@@ -826,39 +1017,32 @@ public class CoachBot extends TelegramLongPollingBot {
         safeExecute(msg);
     }
 
-    // Пикер всех пользователей для добавления в группу
-    private void renderAllUsersPickerForAdd(long chatId, String adminId, int page) {
-        try {
-            int size = 20;
-            int total = UserRepo.countUsers();
-            if (total <= 0) {
-                SendMessage empty = new SendMessage(String.valueOf(chatId), "Активных пользователей пока нет.");
-                empty.setReplyMarkup(Keyboards.backToAdmin());
-                safeExecute(empty);
-                return;
-            }
-            int pages = Math.max(1,(int)Math.ceil(total/(double)size));
-            page = Math.min(Math.max(1,page), pages);
-            int offset = (page-1)*size;
-
-            var rows = UserRepo.allUsersPagedDetailed(size, offset); // DESC по rowid
-            StringJoiner payload = new StringJoiner(",");
-            StringBuilder sb = new StringBuilder("Активные пользователи (стр. "+page+"/"+pages+"):\n");
-            int i = 1;
-            for (UserRepo.UserRow r : rows) {
-                payload.add(r.id);
-                sb.append(i++).append(". ").append(formatRow(r)).append("\n");
-            }
-
-            StateRepo.set(adminId, "ASK_GROUP_ADD", 1, payload.toString());
-            SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString() + "\nВыберите пользователя по номеру для добавления в вашу группу:");
-            sm.setReplyMarkup(Keyboards.pager("pick:addgroup", page, pages));
-            safeExecute(sm);
-        } catch (Exception e) {
-            SendMessage err = new SendMessage(String.valueOf(chatId), "Не удалось загрузить список пользователей: " + e.getMessage());
-            err.setReplyMarkup(Keyboards.backToAdmin());
-            safeExecute(err);
+    private void renderAllUsersPicker(long chatId, String adminId, String base, int page, String armStateType, String prompt) throws Exception {
+        int size = 20;
+        int total = UserRepo.countUsers();
+        if (total <= 0) {
+            SendMessage empty = new SendMessage(String.valueOf(chatId), "Активных пользователей пока нет.");
+            empty.setReplyMarkup(Keyboards.backToAdmin());
+            safeExecute(empty);
+            return;
         }
+        int pages = Math.max(1,(int)Math.ceil(total/(double)size));
+        page = Math.min(Math.max(1,page), pages);
+        int offset = (page-1)*size;
+
+        var rows = UserRepo.allUsersPagedDetailed(size, offset); // DESC по rowid
+        StringJoiner payload = new StringJoiner(",");
+        StringBuilder sb = new StringBuilder("Активные пользователи (стр. "+page+"/"+pages+"):\n");
+        int i = 1;
+        for (UserRepo.UserRow r : rows) {
+            payload.add(r.id);
+            sb.append(i++).append(". ").append(formatRow(r)).append("\n");
+        }
+
+        StateRepo.set(adminId, armStateType, 1, payload.toString());
+        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt);
+        msg.setReplyMarkup(Keyboards.pager(base, page, pages));
+        safeExecute(msg);
     }
 
     // ===== данные для списков =====
@@ -928,6 +1112,37 @@ public class CoachBot extends TelegramLongPollingBot {
         }
     }
 
+    private void renderAllUsers(long chatId, int page) {
+        try {
+            int size = 20;
+            int total = UserRepo.countUsers();
+            if (total <= 0) {
+                SendMessage empty = new SendMessage(String.valueOf(chatId), "Активных пользователей пока нет.");
+                empty.setReplyMarkup(Keyboards.backToAdmin());
+                safeExecute(empty);
+                return;
+            }
+            int pages = Math.max(1,(int)Math.ceil(total/(double)size));
+            page = Math.min(Math.max(1,page), pages);
+            int offset = (page-1)*size;
+
+            var rows = UserRepo.allUsersPagedDetailed(size, offset); // DESC по rowid
+            StringBuilder sb = new StringBuilder("Активные пользователи (стр. "+page+"/"+pages+"):\n");
+            int i = offset + 1;
+            for (UserRepo.UserRow r : rows) {
+                sb.append(i++).append(". ").append(formatRow(r)).append("\n");
+            }
+
+            SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
+            sm.setReplyMarkup(Keyboards.pager("allusers", page, pages));
+            safeExecute(sm);
+        } catch (Exception e) {
+            SendMessage err = new SendMessage(String.valueOf(chatId), "Не удалось загрузить список пользователей: " + e.getMessage());
+            err.setReplyMarkup(Keyboards.backToAdmin());
+            safeExecute(err);
+        }
+    }
+
     private void sendReportsPage(String adminId, long chatId, String userId, int page, boolean desc) throws Exception {
         String owner = GroupRepo.adminOf(userId);
         if (owner == null || (!owner.equals(adminId) && UserRepo.role(adminId) != Roles.SUPERADMIN)) {
@@ -936,7 +1151,8 @@ public class CoachBot extends TelegramLongPollingBot {
             safeExecute(sm);
             return;
         }
-        int size = 5;
+        // ОБНОВЛЕНО: показываем по ОДНОМУ отчёту на страницу
+        int size = 1;
         int total = ReportRepo.countByUser(userId);
         int pages = Math.max(1, (int)Math.ceil(total/(double)size));
         page = Math.min(Math.max(1,page), pages);
@@ -945,10 +1161,37 @@ public class CoachBot extends TelegramLongPollingBot {
         StringBuilder sb = new StringBuilder("Отчёты пользователя tg_id: ")
                 .append(userId)
                 .append(" (стр. ").append(page).append("/").append(pages).append("):\n\n");
-        for (String r : rows) sb.append(r).append("\n\n");
+        for (String r : rows) sb.append(r); // один отчёт — одна страница, без доп. переносов
 
         SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
         sm.setReplyMarkup(Keyboards.pager("reports:"+userId+":"+(desc?"desc":"asc"), page, pages));
+        safeExecute(sm);
+    }
+
+    private void showUserParamsForAdmin(String adminId, long chatId, String userId) throws Exception {
+        String owner = GroupRepo.adminOf(userId);
+        if (owner == null || (!owner.equals(adminId) && UserRepo.role(adminId) != Roles.SUPERADMIN)) {
+            SendMessage sm = new SendMessage(String.valueOf(chatId), "Нет доступа.");
+            sm.setReplyMarkup(Keyboards.backToAdmin());
+            safeExecute(sm);
+            return;
+        }
+        String txt = com.example.coachbot.repo.ParamsRepo.getParamsText(userId);
+        if (txt == null || txt.isBlank()) txt = "Параметры пользователя ещё не заполнены.";
+
+        // ОБНОВЛЕНО: показываем фото, если загружено
+        String photoId = com.example.coachbot.repo.ParamsRepo.getPhotoId(userId);
+        if (photoId != null && !photoId.isBlank()) {
+            SendPhoto sp = new SendPhoto();
+            sp.setChatId(String.valueOf(chatId));
+            sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(photoId)); // file_id
+            sp.setCaption("Фото пользователя tg_id: " + userId);
+            safeExecute(sp);
+        }
+
+        SendMessage sm = new SendMessage(String.valueOf(chatId), "Параметры пользователя tg_id: " + userId + "\n\n" + txt);
+        // Кнопки: Напомнить / Назад
+        sm.setReplyMarkup(Keyboards.remindParamsAndBack(userId));
         safeExecute(sm);
     }
 }
