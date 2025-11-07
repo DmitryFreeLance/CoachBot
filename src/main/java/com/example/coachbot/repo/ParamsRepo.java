@@ -7,39 +7,83 @@ import java.sql.*;
 /**
  * Хранилище параметров пользователя (текущие значения, перезапись при обновлении).
  *
- * Таблица создаётся/обновляется автоматически (ensureTable()):
+ * Итоговая целевая схема (с авто-добавлением недостающих колонок):
  *   user_params(
  *     user_id TEXT PRIMARY KEY,
- *     weight REAL, waist REAL,
- *     chest_exhale REAL, chest_relaxed REAL, chest_inhale REAL,
- *     biceps_relaxed REAL, biceps_flex REAL,
+ *     weight REAL,
+ *     waist_navel REAL,         -- талия на уровне пупка (старая "waist")
+ *     waist_max REAL,           -- талия максимальный обхват
+ *     chest_exhale REAL,
+ *     chest_relaxed REAL,
+ *     chest_inhale REAL,
+ *     biceps_left_relaxed REAL,
+ *     biceps_left_flex REAL,
+ *     biceps_right_relaxed REAL,
+ *     biceps_right_flex REAL,
+ *     thigh_left REAL,          -- левое бедро (верхняя треть / максимум)
+ *     thigh_right REAL,         -- правое бедро (верхняя треть / максимум)
+ *     hips REAL,                -- ягодицы (по пику)
+ *     galife REAL,              -- «галифе» (при наличии)
  *     photo_id TEXT,
  *     updated_at INTEGER
  *   )
  */
 public class ParamsRepo {
 
-    /** Создаём таблицу при отсутствии (и гарантируем нужные колонки). */
+    /** Создаём таблицу при отсутствии и гарантируем наличие всех нужных колонок. */
     private static void ensureTable(Connection c) throws SQLException {
+        // Базовая таблица (с минимальным набором колонок)
         try (Statement st = c.createStatement()) {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS user_params(
                   user_id TEXT PRIMARY KEY,
                   weight REAL,
-                  waist REAL,
+                  waist_navel REAL,
+                  waist_max REAL,
                   chest_exhale REAL,
                   chest_relaxed REAL,
                   chest_inhale REAL,
-                  biceps_relaxed REAL,
-                  biceps_flex REAL,
+                  biceps_left_relaxed REAL,
+                  biceps_left_flex REAL,
+                  biceps_right_relaxed REAL,
+                  biceps_right_flex REAL,
+                  thigh_left REAL,
+                  thigh_right REAL,
+                  hips REAL,
+                  galife REAL,
                   photo_id TEXT,
                   updated_at INTEGER
                 )
             """);
         }
-        // На случай старых схем без chest_relaxed / biceps_flex — добавим недостающие колонки.
+
+        // Поддержка старых схем: добавляем отсутствующие колонки безопасно
+        addColumnIfMissing(c, "user_params", "waist_navel", "REAL"); // было 'waist' в старых версиях
+        addColumnIfMissing(c, "user_params", "waist_max", "REAL");
+
+        addColumnIfMissing(c, "user_params", "chest_exhale", "REAL");
         addColumnIfMissing(c, "user_params", "chest_relaxed", "REAL");
-        addColumnIfMissing(c, "user_params", "biceps_flex",  "REAL");
+        addColumnIfMissing(c, "user_params", "chest_inhale", "REAL");
+
+        // Раньше были только biceps_relaxed / biceps_flex — теперь храним отдельно по рукам
+        addColumnIfMissing(c, "user_params", "biceps_left_relaxed", "REAL");
+        addColumnIfMissing(c, "user_params", "biceps_left_flex", "REAL");
+        addColumnIfMissing(c, "user_params", "biceps_right_relaxed", "REAL");
+        addColumnIfMissing(c, "user_params", "biceps_right_flex", "REAL");
+
+        addColumnIfMissing(c, "user_params", "thigh_left", "REAL");
+        addColumnIfMissing(c, "user_params", "thigh_right", "REAL");
+        addColumnIfMissing(c, "user_params", "hips", "REAL");
+        addColumnIfMissing(c, "user_params", "galife", "REAL");
+
+        addColumnIfMissing(c, "user_params", "photo_id", "TEXT");
+        addColumnIfMissing(c, "user_params", "updated_at", "INTEGER");
+
+        // Совместимость со старым именем "waist" -> переносим в waist_navel при чтении/записи (делаем алиас на уровне upsert/getPretty)
+        if (tableHasColumn(c, "user_params", "waist")) {
+            // Ничего не дропаем — просто оставляем, чтобы не ломать старые данные; на запись используем новые поля
+            // при чтении будем пытаться взять waist_navel, иначе legacy "waist".
+        }
     }
 
     private static void addColumnIfMissing(Connection c, String table, String col, String ddlType) {
@@ -58,35 +102,75 @@ public class ParamsRepo {
         } catch (SQLException ignore) { /* безопасно проигнорируем */ }
     }
 
+    private static boolean tableHasColumn(Connection c, String table, String col) {
+        try (PreparedStatement ps = c.prepareStatement("PRAGMA table_info(" + table + ")")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (col.equalsIgnoreCase(rs.getString("name"))) return true;
+                }
+            }
+        } catch (SQLException ignore) {}
+        return false;
+    }
+
+    /* ================= записи ================= */
+
+    /**
+     * Upsert числа (все поля nullable). Время обновления проставляется всегда.
+     */
     public static void upsertNumbers(String userId,
-                                     Double weight, Double waist,
+                                     Double weight,
+                                     Double waistNavel,
+                                     Double waistMax,
                                      Double chEx, Double chRl, Double chIn,
-                                     Double biRl, Double biFx) throws Exception {
+                                     Double biL_Rl, Double biL_Fx,
+                                     Double biR_Rl, Double biR_Fx,
+                                     Double thighL, Double thighR,
+                                     Double hips, Double galife) throws Exception {
         try (Connection c = Db.connect()) {
             ensureTable(c);
-            long now = System.currentTimeMillis()/1000L;
+            long now = System.currentTimeMillis() / 1000L;
             try (PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO user_params(user_id,weight,waist,chest_exhale,chest_relaxed,chest_inhale,biceps_relaxed,biceps_flex,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?)
+                INSERT INTO user_params(
+                  user_id, weight, waist_navel, waist_max,
+                  chest_exhale, chest_relaxed, chest_inhale,
+                  biceps_left_relaxed, biceps_left_flex,
+                  biceps_right_relaxed, biceps_right_flex,
+                  thigh_left, thigh_right, hips, galife, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(user_id) DO UPDATE SET
                   weight=excluded.weight,
-                  waist=excluded.waist,
+                  waist_navel=excluded.waist_navel,
+                  waist_max=excluded.waist_max,
                   chest_exhale=excluded.chest_exhale,
                   chest_relaxed=excluded.chest_relaxed,
                   chest_inhale=excluded.chest_inhale,
-                  biceps_relaxed=excluded.biceps_relaxed,
-                  biceps_flex=excluded.biceps_flex,
+                  biceps_left_relaxed=excluded.biceps_left_relaxed,
+                  biceps_left_flex=excluded.biceps_left_flex,
+                  biceps_right_relaxed=excluded.biceps_right_relaxed,
+                  biceps_right_flex=excluded.biceps_right_flex,
+                  thigh_left=excluded.thigh_left,
+                  thigh_right=excluded.thigh_right,
+                  hips=excluded.hips,
+                  galife=excluded.galife,
                   updated_at=excluded.updated_at
             """)) {
-                int i=1;
+                int i = 1;
                 ps.setString(i++, userId);
                 setNullable(ps, i++, weight);
-                setNullable(ps, i++, waist);
+                setNullable(ps, i++, waistNavel);
+                setNullable(ps, i++, waistMax);
                 setNullable(ps, i++, chEx);
                 setNullable(ps, i++, chRl);
                 setNullable(ps, i++, chIn);
-                setNullable(ps, i++, biRl);
-                setNullable(ps, i++, biFx);
+                setNullable(ps, i++, biL_Rl);
+                setNullable(ps, i++, biL_Fx);
+                setNullable(ps, i++, biR_Rl);
+                setNullable(ps, i++, biR_Fx);
+                setNullable(ps, i++, thighL);
+                setNullable(ps, i++, thighR);
+                setNullable(ps, i++, hips);
+                setNullable(ps, i++, galife);
                 ps.setLong(i, now);
                 ps.executeUpdate();
             }
@@ -123,24 +207,42 @@ public class ParamsRepo {
         try (Connection c = Db.connect()) {
             ensureTable(c);
             try (PreparedStatement ps = c.prepareStatement("""
-                SELECT weight,waist,chest_exhale,chest_relaxed,chest_inhale,biceps_relaxed,biceps_flex,updated_at
+                SELECT
+                  weight,
+                  COALESCE(waist_navel, waist) as waist_navel_compat, -- поддержка legacy
+                  waist_max,
+                  chest_exhale, chest_relaxed, chest_inhale,
+                  biceps_left_relaxed, biceps_left_flex,
+                  biceps_right_relaxed, biceps_right_flex,
+                  thigh_left, thigh_right, hips, galife,
+                  updated_at
                 FROM user_params WHERE user_id=?
             """)) {
                 ps.setString(1, userId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) return null;
+
                     Double w   = box(rs.getObject(1));
-                    Double ws  = box(rs.getObject(2));
-                    Double chE = box(rs.getObject(3));
-                    Double chR = box(rs.getObject(4));
-                    Double chI = box(rs.getObject(5));
-                    Double biR = box(rs.getObject(6));
-                    Double biF = box(rs.getObject(7));
+                    Double wNv = box(rs.getObject(2));
+                    Double wMx = box(rs.getObject(3));
+                    Double chE = box(rs.getObject(4));
+                    Double chR = box(rs.getObject(5));
+                    Double chI = box(rs.getObject(6));
+                    Double biLR= box(rs.getObject(7));
+                    Double biLF= box(rs.getObject(8));
+                    Double biRR= box(rs.getObject(9));
+                    Double biRF= box(rs.getObject(10));
+                    Double thL = box(rs.getObject(11));
+                    Double thR = box(rs.getObject(12));
+                    Double hp  = box(rs.getObject(13));
+                    Double glf = box(rs.getObject(14));
 
                     StringBuilder sb = new StringBuilder();
                     sb.append("📏 *Текущие параметры:*\n");
-                    if (w  != null) sb.append("⚖️ Вес: ").append(trim(w)).append(" кг\n");
-                    if (ws != null) sb.append("📍 Талия (уровень пупка): ").append(trim(ws)).append(" см\n");
+                    if (w   != null) sb.append("⚖️ Вес: ").append(trim(w)).append(" кг\n");
+                    if (wNv != null) sb.append("📍 Талия (уровень пупка): ").append(trim(wNv)).append(" см\n");
+                    if (wMx != null) sb.append("📍 Талия (макс. обхват): ").append(trim(wMx)).append(" см\n");
+
                     boolean hasChest = (chE!=null||chR!=null||chI!=null);
                     if (hasChest) {
                         sb.append("🫁 Грудь:\n");
@@ -148,12 +250,29 @@ public class ParamsRepo {
                         sb.append(" • расслабл.: ").append(val(chR)).append(" см\n");
                         sb.append(" • на вдохе: ").append(val(chI)).append(" см\n");
                     }
-                    boolean hasBi = (biR!=null||biF!=null);
-                    if (hasBi) {
-                        sb.append("💪 Бицепс:\n");
-                        sb.append(" • расслабл.: ").append(val(biR)).append(" см\n");
-                        sb.append(" • напряжён.: ").append(val(biF)).append(" см\n");
+
+                    if (thL!=null || thR!=null) {
+                        sb.append("🦵 Бедро:\n");
+                        sb.append(" • левое: ").append(val(thL)).append(" см\n");
+                        sb.append(" • правое: ").append(val(thR)).append(" см\n");
                     }
+                    if (hp!=null)  sb.append("🍑 Ягодицы: ").append(trim(hp)).append(" см\n");
+                    if (glf!=null) sb.append("〰️ Галифе: ").append(trim(glf)).append(" см\n");
+
+                    boolean hasBiL = (biLR!=null || biLF!=null);
+                    boolean hasBiR = (biRR!=null || biRF!=null);
+                    if (hasBiL || hasBiR) {
+                        sb.append("💪 Бицепс:\n");
+                        if (hasBiL) {
+                            sb.append(" • левый — расслабл.: ").append(val(biLR))
+                                    .append(" см; напр.: ").append(val(biLF)).append(" см\n");
+                        }
+                        if (hasBiR) {
+                            sb.append(" • правый — расслабл.: ").append(val(biRR))
+                                    .append(" см; напр.: ").append(val(biRF)).append(" см\n");
+                        }
+                    }
+
                     return sb.toString().trim();
                 }
             }

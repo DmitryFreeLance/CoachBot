@@ -27,17 +27,6 @@ public class ReportRepo {
     /**
      * Частичный upsert отчёта за «сегодня» (граница суток 04:00 задаётся в TimeUtil.today()).
      * Любые поля можно передавать null — тогда при upsert они НЕ перезатирают существующие значения.
-     *
-     * @param userId  tg_id
-     * @param sleep   часы сна (Double) или null
-     * @param steps   шаги (Integer) или null
-     * @param water   литры воды (Double) или null
-     * @param kcal    калории (Integer) или null
-     * @param p       белки (Double) или null
-     * @param f       жиры (Double) или null
-     * @param c       углеводы (Double) или null
-     * @param note    примечание (String) или null
-     * @param photoId file_id фото (String) или null
      */
     public static void insertOrUpdateForToday(
             String userId,
@@ -67,7 +56,6 @@ public class ReportRepo {
             int i = 1;
             ps.setString(i++, userId);
             ps.setString(i++, d.toString());
-            // значения — как есть (могут быть null)
             if (sleep == null) ps.setNull(i++, Types.REAL); else ps.setDouble(i++, sleep);
             if (steps == null) ps.setNull(i++, Types.INTEGER); else ps.setInt(i++, steps);
             if (water == null) ps.setNull(i++, Types.REAL); else ps.setDouble(i++, water);
@@ -77,10 +65,49 @@ public class ReportRepo {
             if (c == null) ps.setNull(i++, Types.REAL); else ps.setDouble(i++, c);
             if (note == null) ps.setNull(i++, Types.VARCHAR); else ps.setString(i++, note);
             if (photoId == null) ps.setNull(i++, Types.VARCHAR); else ps.setString(i++, photoId);
-            ps.setLong(i, nowTs); // created_at пишем только при INSERT; при UPDATE остаётся старое (мы его не трогаем)
-
+            ps.setLong(i, nowTs);
             ps.executeUpdate();
         }
+    }
+
+    /** 📸 Добавить одно фото еды за конкретную дату (складывается в report_photos) */
+    public static void addFoodPhoto(String userId, LocalDate date, String fileId) throws Exception {
+        long nowTs = System.currentTimeMillis() / 1000L;
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "INSERT OR IGNORE INTO report_photos(user_id,date,file_id,created_at) VALUES(?,?,?,?)")) {
+            ps.setString(1, userId);
+            ps.setString(2, date.toString());
+            ps.setString(3, fileId);
+            ps.setLong(4, nowTs);
+            ps.executeUpdate();
+        }
+    }
+
+    public static int countFoodPhotos(String userId, LocalDate date) throws Exception {
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT COUNT(*) FROM report_photos WHERE user_id=? AND date=?")) {
+            ps.setString(1, userId);
+            ps.setString(2, date.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    public static List<String> listFoodPhotos(String userId, LocalDate date) throws Exception {
+        List<String> out = new ArrayList<>();
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT file_id FROM report_photos WHERE user_id=? AND date=? ORDER BY created_at, rowid")) {
+            ps.setString(1, userId);
+            ps.setString(2, date.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
+            }
+        }
+        return out;
     }
 
     /** Сколько отчётов у пользователя всего */
@@ -141,11 +168,18 @@ public class ReportRepo {
                                 .append(Emojis.AVOCADO).append(" Жиры: ").append(val(ff)).append("\n")
                                 .append(Emojis.BREAD).append(" Углеводы: ").append(val(cc)).append("\n");
                     }
+
+                    // Новое: показываем кол-во фото еды за день (из report_photos),
+                    // иначе (legacy) — отметку про одиночный скрин.
+                    int photosCount = countFoodPhotos(userId, d);
+                    if (photosCount > 0) {
+                        sb.append("📸 Фото еды: ").append(photosCount).append(" шт.\n");
+                    } else if (photo != null && !photo.isBlank()) {
+                        sb.append("🖼 Приложен скрин.\n");
+                    }
+
                     if (note != null && !note.isBlank()) {
                         sb.append("📝 Заметка: ").append(note).append("\n");
-                    }
-                    if (photo != null && !photo.isBlank()) {
-                        sb.append("🖼 Приложен скрин.\n");
                     }
 
                     out.add(sb.toString().trim());

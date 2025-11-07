@@ -5,9 +5,12 @@ import com.example.coachbot.service.*;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.*;
+import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
+import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
@@ -20,6 +23,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.StringJoiner;
 
+/**
+ * Полный класс CoachBot с поддержкой:
+ *  - многофото в «Фото еды» (для админа — отправка альбомами при просмотре отчётов);
+ *  - «Пропустить» на шагах 5 (фото) и 6 (комментарий) визарда «Отчёт».
+ */
 public class CoachBot extends TelegramLongPollingBot {
 
     private final String username;
@@ -86,8 +94,8 @@ public class CoachBot extends TelegramLongPollingBot {
 • 🍽 *План питания* — смотри запланированные калории и БЖУ на сегодня.  
 • 🏋️ *Тренировка* — список упражнений с галочками.  
 • 📊 *Нормы активности* — вода, шаги и сон на день.  
-• 📝 *Отчёт* — заполни дневной отчёт: сон → шаги → вода → КБЖУ.  
-• 📏 *Мои параметры* — пошаговый ввод веса и замеров + фото.  
+• 📝 *Отчёт* — заполни дневной отчёт: сон → шаги → вода → КБЖУ → фото еды → комментарий.  
+• 📏 *Мои параметры* — пошаговый ввод веса и замеров + фото (на каждом шаге есть «Пропустить»).  
 • 📞 *Контакты* — контакты твоего тренера.
 
 *2) Ежедневные напоминания*  
@@ -97,6 +105,7 @@ public class CoachBot extends TelegramLongPollingBot {
 *3) Отчёт*  
 • В день можно отправить *только 1 отчёт*.  
 • КБЖУ можно ввести так: `1778,133,59,178` или отправить *скрин*.  
+• Фото еды можно присылать *серией* (альбомы поддерживаются).  
 • Если ошибся — нажми «✖️ Отменить заполнение» и начни заново.
 
 *4) Подсказки*  
@@ -645,10 +654,10 @@ public class CoachBot extends TelegramLongPollingBot {
         // ===== защита во время отчёта =====
         var stUser = StateRepo.get(tgId);
         if (stUser != null && "REPORT".equals(stUser.type())) {
-            if (!"report:cancel".equals(data)) {
+            if (!"report:cancel".equals(data) && !"report:skip".equals(data)) {
                 SendMessage warn = new SendMessage(String.valueOf(chatId),
-                        "Вы в процессе записи отчёта. Для отмены нажмите кнопку ниже ✖️");
-                warn.setReplyMarkup(Keyboards.reportCancel());
+                        "Вы в процессе записи отчёта. Для отмены или пропуска используйте кнопки ниже.");
+                warn.setReplyMarkup(Keyboards.reportSkipOrCancel());
                 safeExecute(warn);
                 return;
             }
@@ -738,9 +747,10 @@ public class CoachBot extends TelegramLongPollingBot {
             safeExecute(sm);
             return;
         }
-        if ("params:skip".equals(data)) { // пропуск фото
-            SendMessage sm = ParamsWizard.skipPhoto(tgId, chatId);
-            safeExecute(sm);
+        if ("params:skip".equals(data)) { // пропуск шага (в т.ч. фото)
+            Object sm = ParamsWizard.skip(tgId, chatId); // предполагается метод, добавленный в твоём ParamsWizard
+            if (sm instanceof SendMessage s1) safeExecute(s1);
+            else if (sm instanceof SendPhoto s2) safeExecute(s2);
             return;
         }
 
@@ -918,7 +928,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // отчёт
+        // отчёт (отмена/старт/пропуск)
         if ("report:cancel".equals(data)) {
             safeExecute(ReportWizard.cancel(String.valueOf(cq.getFrom().getId()), chatId));
             try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build()); } catch (Exception ignored) {}
@@ -926,6 +936,10 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         if ("report:start".equals(data)) {
             safeExecute(ReportWizard.start(String.valueOf(cq.getFrom().getId()), chatId));
+            return;
+        }
+        if ("report:skip".equals(data)) {
+            handleReportSkip(String.valueOf(cq.getFrom().getId()), chatId);
             return;
         }
 
@@ -950,6 +964,47 @@ public class CoachBot extends TelegramLongPollingBot {
         }
 
         if ("noop".equals(data)) { return; }
+    }
+
+    /* ======= ДОБАВЛЕНО: обработка пропуска шагов 5/6 в визарде «Отчёт» ======= */
+
+    private void handleReportSkip(String userId, long chatId) {
+        try {
+            var st = StateRepo.get(userId);
+            if (st == null || !"REPORT".equals(st.type())) {
+                SendMessage sm = new SendMessage(String.valueOf(chatId), "Сейчас нечего пропускать.");
+                sm.setReplyMarkup(Keyboards.backToMenu());
+                safeExecute(sm);
+                return;
+            }
+            switch (st.step()) {
+                case 5 -> { // пропускаем фото еды -> спрашиваем комментарий
+                    StateRepo.set(userId, "REPORT", 6, "");
+                    SendMessage ask = new SendMessage(String.valueOf(chatId),
+                            "6/6. Пришлите *текстовый комментарий* (или нажмите «Пропустить»).");
+                    ask.setParseMode(ParseMode.MARKDOWN);
+                    ask.setReplyMarkup(Keyboards.reportSkipOrCancel());
+                    safeExecute(ask);
+                }
+                case 6 -> { // пропускаем комментарий -> завершаем
+                    // предполагается, что ReportWizard в шагах 1..4 уже сохранил значения;
+                    // здесь просто «закрываем» визард.
+                    StateRepo.clear(userId);
+                    SendMessage done = new SendMessage(String.valueOf(chatId),
+                            Emojis.CHECK + " Отчёт принят! Отличная работа — ещё один шаг к цели " + Emojis.MUSCLE);
+                    done.setReplyMarkup(Keyboards.backToMenu());
+                    safeExecute(done);
+                }
+                default -> {
+                    SendMessage sm = new SendMessage(String.valueOf(chatId),
+                            "На текущем шаге пропуск недоступен. Давайте завершим этот шаг.");
+                    sm.setReplyMarkup(Keyboards.reportCancel());
+                    safeExecute(sm);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     /* ==================== пикеры списков ==================== */
@@ -1152,7 +1207,7 @@ public class CoachBot extends TelegramLongPollingBot {
             safeExecute(sm);
             return;
         }
-        // ОБНОВЛЕНО: показываем по ОДНОМУ отчёту на страницу
+        // показываем по ОДНОМУ отчёту на страницу
         int size = 1;
         int total = ReportRepo.countByUser(userId);
         int pages = Math.max(1, (int)Math.ceil(total/(double)size));
@@ -1162,6 +1217,8 @@ public class CoachBot extends TelegramLongPollingBot {
         StringBuilder sb = new StringBuilder();
         sb.append("Отчёты клиента (tg_id: ").append(userId).append(")")
                 .append(" — стр. ").append(page).append("/").append(pages).append("\n\n");
+
+        LocalDate date = null;
 
         if (!rows.isEmpty()) {
             String r = rows.get(0); // один отчёт на страницу
@@ -1176,7 +1233,6 @@ public class CoachBot extends TelegramLongPollingBot {
             java.util.regex.Matcher m = java.util.regex.Pattern
                     .compile("\\*(\\d{2}\\.\\d{2}\\.\\d{4})\\*")
                     .matcher(firstLine);
-            java.time.LocalDate date = null;
             if (m.find()) {
                 try { date = java.time.LocalDate.parse(m.group(1), TimeUtil.DATE_FMT); } catch (Exception ignore) {}
             }
@@ -1199,9 +1255,34 @@ public class CoachBot extends TelegramLongPollingBot {
             sb.append("Нет отчётов.");
         }
 
+        // Текст отчёта
         SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
         sm.setReplyMarkup(Keyboards.pager("reports:"+userId+":"+(desc?"desc":"asc"), page, pages));
         safeExecute(sm);
+
+        // ДОБАВЛЕНО: если знаем дату — досылаем фото еды альбомами (по 10)
+        if (date != null) {
+            try {
+                List<String> photos = ReportRepo.listFoodPhotos(userId, date); // метод должен быть в твоём ReportRepo
+                if (!photos.isEmpty()) {
+                    final int CHUNK = 10;
+                    for (int i = 0; i < photos.size(); i += CHUNK) {
+                        int to = Math.min(i + CHUNK, photos.size());
+                        List<InputMedia> medias = new ArrayList<>();
+                        for (int j = i; j < to; j++) {
+                            InputMediaPhoto p = new InputMediaPhoto();
+                            p.setMedia(photos.get(j));
+                            if (j == i) p.setCaption("Фото еды за " + TimeUtil.DATE_FMT.format(date));
+                            medias.add(p);
+                        }
+                        SendMediaGroup group = new SendMediaGroup(String.valueOf(chatId), medias);
+                        try { execute(group); } catch (Exception ig) { ig.printStackTrace(); }
+                    }
+                }
+            } catch (Exception ig) {
+                ig.printStackTrace();
+            }
+        }
     }
 
     private void showUserParamsForAdmin(String adminId, long chatId, String userId) throws Exception {
@@ -1215,7 +1296,7 @@ public class CoachBot extends TelegramLongPollingBot {
         String txt = com.example.coachbot.repo.ParamsRepo.getParamsText(userId);
         if (txt == null || txt.isBlank()) txt = "Параметры пользователя ещё не заполнены.";
 
-        // ОБНОВЛЕНО: показываем фото, если загружено
+        // показываем фото, если загружено
         String photoId = com.example.coachbot.repo.ParamsRepo.getPhotoId(userId);
         if (photoId != null && !photoId.isBlank()) {
             SendPhoto sp = new SendPhoto();

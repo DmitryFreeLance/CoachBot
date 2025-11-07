@@ -112,18 +112,28 @@ public class Keyboards {
         return m;
     }
 
-    // Мои параметры: только отмена (для промежуточных шагов)
+    // Отчёт: шаги с возможностью «Пропустить» (фото еды и текстовый комментарий)
+    public static InlineKeyboardMarkup reportSkipOrCancel() {
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(btn("⏭ Пропустить", "report:skip")));
+        rows.add(List.of(btn("✖️ Отменить заполнение", "report:cancel")));
+        m.setKeyboard(rows);
+        return m;
+    }
+
+    // Мои параметры: только отмена (для промежуточных шагов — если нужен «жёсткий» режим)
     public static InlineKeyboardMarkup paramsCancelOnly() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(List.of(btn("✖️ Отменить ввод", "params:cancel"))));
         return m;
     }
 
-    // Мои параметры: последний шаг — предложить «Пропустить фото» или «Отменить»
+    // Мои параметры: на каждом шаге «Пропустить замер» + «Отменить ввод»
     public static InlineKeyboardMarkup paramsSkipOrCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
-                List.of(btn("⏭ Пропустить фото", "params:skip")),
+                List.of(btn("⏭ Пропустить замер", "params:skip")),
                 List.of(btn("✖️ Отменить ввод", "params:cancel"))
         ));
         return m;

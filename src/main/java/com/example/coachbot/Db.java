@@ -45,7 +45,7 @@ public class Db {
                 migrateSettingsTable(c);       // k/v -> key/value
                 migrateReportsTable(c);        // полноценная схема reports
                 migrateNormsTables(c);         // создаёт activity_norms и переносит из norms при наличии
-                migrateUserParamsTable(c);     // ✅ МИГРАЦИЯ user_params (новая схема с chest_relaxed и т.д.)
+                migrateUserParamsTable(c);     // миграция user_params (старая -> новая)
 
                 createIfMissing(c, """
                     CREATE TABLE IF NOT EXISTS nutrition_plans(
@@ -105,6 +105,17 @@ public class Db {
 
                 // Индекс на группы по администратору — полезен при росте данных
                 createIfMissing(c, "CREATE INDEX IF NOT EXISTS idx_groups_admin ON groups(admin_id)");
+
+                // 📸 Новая таблица для нескольких фото еды в отчётах
+                createIfMissing(c, """
+                    CREATE TABLE IF NOT EXISTS report_photos(
+                      user_id    TEXT NOT NULL,
+                      date       TEXT NOT NULL,
+                      file_id    TEXT NOT NULL,
+                      created_at INTEGER,
+                      PRIMARY KEY(user_id,date,file_id)
+                    )
+                """);
 
                 ensureDefaultSetting(c, "evening_time", "19:00");
 
@@ -350,7 +361,7 @@ public class Db {
 
     /**
      * Миграция таблицы user_params (используется визард «Мои параметры»).
-     * Целевая схема:
+     * Целевая схема (старая совместимая):
      *   user_params(
      *     user_id TEXT PRIMARY KEY,
      *     weight REAL, waist REAL,
@@ -359,9 +370,6 @@ public class Db {
      *     photo_id TEXT,
      *     updated_at INTEGER
      *   )
-     *
-     * Если таблица отсутствует — создаём.
-     * Если присутствует, но нет нужных колонок — создаём user_params_new, копируем доступные поля, меняем.
      */
     private static void migrateUserParamsTable(Connection c) throws SQLException {
         boolean exists = tableExists(c, "user_params");
@@ -411,12 +419,10 @@ public class Db {
                 )
             """);
 
-            // Подготовим селект с подстановкой NULL для отсутствующих колонок
             String selWeight = tableHasColumn(c,"user_params","weight") ? "weight" : "NULL";
             String selWaist  = tableHasColumn(c,"user_params","waist")  ? "waist"  : "NULL";
 
             String selChEx   = tableHasColumn(c,"user_params","chest_exhale")  ? "chest_exhale"  : "NULL";
-            // во избежание несовпадений имён — пробуем возможные старые варианты
             String selChRl   =
                     tableHasColumn(c,"user_params","chest_relaxed")   ? "chest_relaxed" :
                             (tableHasColumn(c,"user_params","chest_relax")    ? "chest_relax" :
