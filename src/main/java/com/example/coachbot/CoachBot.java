@@ -914,7 +914,7 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         StateRepo.set(adminId, armStateType, 1, payload.toString());
 
-        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\nВведите номер сообщением. Кнопок выбора нет.");
+        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\nВведите порядковый номер пользователя:");
         // ВАЖНО: здесь НЕТ setParseMode -> не будет падать из-за Markdown
         msg.setReplyMarkup(Keyboards.pager(base, page, pages));
         safeExecute(msg);
