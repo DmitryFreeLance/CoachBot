@@ -27,7 +27,7 @@ public class Keyboards {
 
     /* ========================= Главное меню ========================= */
 
-    // Главное меню: добавлена кнопка «Мои параметры». Кнопки админки отсутствуют здесь.
+    // Главное меню пользователя (без админских пунктов, они есть отдельно)
     public static InlineKeyboardMarkup inlineMainMenu(boolean isAdmin, boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("🍽 План питания", "menu:food")));
@@ -57,25 +57,22 @@ public class Keyboards {
 
     /* ========================= Панели админов ========================= */
 
-    // Обычная админ-панель (без супер-админских пунктов)
+    // Обновлённая админ-панель:
+    // - Переименовано: «Моя группа» -> «Мои клиенты», «Добавить клиента», «Удалить клиента»
+    // - Кнопки клиентских действий убраны отсюда (они теперь после выбора клиента)
     public static InlineKeyboardMarkup adminPanel() {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-        rows.add(List.of(btn("👥 Моя группа", "admin:my")));
-        rows.add(List.of(btn("➕ Добавить в группу", "admin:groupadd")));
-        rows.add(List.of(btn("➖ Удалить из группы", "admin:groupdel")));
-        rows.add(List.of(btn("🍽 Установить КБЖУ", "admin:setcal")));
-        rows.add(List.of(btn("🏋️ Установить план", "admin:setplan")));
-        rows.add(List.of(btn("📊 Установить нормы", "admin:setnorma")));
+        rows.add(List.of(btn("👥 Мои клиенты", "admin:my")));
+        rows.add(List.of(btn("➕ Добавить клиента", "admin:groupadd")));  // callback оставлен прежний
+        rows.add(List.of(btn("➖ Удалить клиента", "admin:groupdel")));    // callback оставлен прежний
         rows.add(List.of(btn("📞 Контакты тренера", "admin:contact")));
-        rows.add(List.of(btn("📝 Отчёты клиента", "admin:reports")));
-        rows.add(List.of(btn("📏 Параметры группы", "admin:params")));
         rows.add(List.of(btn("⏰ Время рассылки", "admin:settime")));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;
     }
 
-    // Панель супер-админа (вынесенные пункты)
+    // Панель супер-админа
     public static InlineKeyboardMarkup superAdminPanel() {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("➕ Добавить админа", "super:add")));
@@ -98,21 +95,18 @@ public class Keyboards {
 
     /* ========================= Кнопки отмены/спец в визардах ========================= */
 
-    // Для ввода контактов: только отмена
     public static InlineKeyboardMarkup contactCancelOnly() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(List.of(btn("✖️ Отменить ввод", "contact:cancel"))));
         return m;
     }
 
-    // Отчёт: только отмена (по требованию)
     public static InlineKeyboardMarkup reportCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(List.of(btn("✖️ Отменить заполнение", "report:cancel"))));
         return m;
     }
 
-    // Отчёт: шаги с возможностью «Пропустить» (фото еды и текстовый комментарий)
     public static InlineKeyboardMarkup reportSkipOrCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
@@ -122,14 +116,12 @@ public class Keyboards {
         return m;
     }
 
-    // Мои параметры: только отмена (для промежуточных шагов — если нужен «жёсткий» режим)
     public static InlineKeyboardMarkup paramsCancelOnly() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(List.of(btn("✖️ Отменить ввод", "params:cancel"))));
         return m;
     }
 
-    // Мои параметры: на каждом шаге «Пропустить замер» + «Отменить ввод»
     public static InlineKeyboardMarkup paramsSkipOrCancel() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -139,7 +131,6 @@ public class Keyboards {
         return m;
     }
 
-    // Кнопка, которую отправляем пользователю в напоминании про параметры
     public static InlineKeyboardMarkup inlineGoParams() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -149,7 +140,6 @@ public class Keyboards {
         return m;
     }
 
-    // Клавиатура для карточки «Параметры пользователя» у админа
     public static InlineKeyboardMarkup remindParamsAndBack(String userId) {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -161,7 +151,6 @@ public class Keyboards {
 
     /* ========================= План тренировок: завершение ========================= */
 
-    // План: завершить + назад в меню — должны быть в каждом сообщении визарда
     public static InlineKeyboardMarkup planFinalizeButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
@@ -173,7 +162,6 @@ public class Keyboards {
 
     /* ========================= Пейджер и быстрые даты ========================= */
 
-    // Универсальный пейджер: ⬅️ 📄 ➡️ + "Назад в админ-панель"
     public static InlineKeyboardMarkup pager(String base, int page, int pages) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         List<InlineKeyboardButton> nav = new ArrayList<>();
@@ -187,8 +175,6 @@ public class Keyboards {
         return m;
     }
 
-    // Быстрый выбор даты для админ-визардов: 7 кнопок "1 день".."7 день"
-    // base = "date:setcal" | "date:setplan" | "date:setnorm"
     public static InlineKeyboardMarkup dateQuickPick(String base, LocalDate today) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         List<InlineKeyboardButton> r1 = new ArrayList<>();
@@ -228,5 +214,20 @@ public class Keyboards {
 
     public static InlineKeyboardMarkup paramsPhotoStep() {
         return paramsSkipOrCancel();
+    }
+
+    /* ========================= Меню действий по выбранному клиенту ========================= */
+
+    public static InlineKeyboardMarkup adminClientActions(String userId) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(btn("🔥 Установить КБЖУ", "client:cal:" + userId)));
+        rows.add(List.of(btn("🏋️ Установить план", "client:plan:" + userId)));
+        rows.add(List.of(btn("📊 Установить нормы", "client:norm:" + userId)));
+        rows.add(List.of(btn("📝 Отчёты клиента", "client:reports:" + userId)));
+        rows.add(List.of(btn("📏 Параметры клиента", "client:params:" + userId)));
+        rows.add(List.of(btn("🔙 В админ-панель", "menu:admin")));
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(rows);
+        return m;
     }
 }
