@@ -18,7 +18,7 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar /app/
 
 # картинки, которые использует бот
-COPY 2.jpg 3.png 4.png 7.png 8.png 10.png 11.png /app/
+COPY 2.jpg 3.png 4.png 7.png 8.png 10.png 11.png 16.png 17.png 18.png 19.png /app/
 
 RUN mkdir -p /app/data
 ENV TZ=Asia/Yekaterinburg
