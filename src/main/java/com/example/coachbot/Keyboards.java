@@ -67,7 +67,7 @@ public class Keyboards {
         rows.add(List.of(btn("🏋️ Установить план", "admin:setplan")));
         rows.add(List.of(btn("📊 Установить нормы", "admin:setnorma")));
         rows.add(List.of(btn("📞 Контакты тренера", "admin:contact")));
-        rows.add(List.of(btn("📝 Отчёты группы", "admin:reports")));
+        rows.add(List.of(btn("📝 Отчёты клиента", "admin:reports")));
         rows.add(List.of(btn("📏 Параметры группы", "admin:params")));
         rows.add(List.of(btn("⏰ Время рассылки", "admin:settime")));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
