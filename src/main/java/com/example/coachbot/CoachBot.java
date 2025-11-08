@@ -5,11 +5,14 @@ import com.example.coachbot.service.*;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.*;
 import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.io.File;
 import java.sql.Connection;
@@ -19,6 +22,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Полный класс Telegram-бота.
+ * Зависимости (остаются как у тебя): repo/*, service/*, Keyboards, Texts, TimeUtil.
+ */
 public class CoachBot extends TelegramLongPollingBot {
 
     private final String username;
@@ -69,6 +76,24 @@ public class CoachBot extends TelegramLongPollingBot {
     }
     public void safeExecute(SendPhoto sp) {
         try { execute(sp); } catch (Exception e) { e.printStackTrace(); }
+    }
+    private void safeExecute(SendMediaGroup mg) {
+        try { execute(mg); } catch (Exception e) { e.printStackTrace(); }
+    }
+    private void safeExecute(EditMessageText emt) {
+        try { execute(emt); } catch (Exception e) { e.printStackTrace(); }
+    }
+    private void safeExecute(EditMessageCaption emc) {
+        try { execute(emc); } catch (Exception e) { e.printStackTrace(); }
+    }
+    private void safeExecute(EditMessageReplyMarkup emr) {
+        try { execute(emr); } catch (Exception e) { e.printStackTrace(); }
+    }
+    private void safeExecute(DeleteMessage dm) {
+        try { execute(dm); } catch (Exception e) { e.printStackTrace(); }
+    }
+    private void safeExecute(AnswerCallbackQuery acq) {
+        try { execute(acq); } catch (Exception e) { e.printStackTrace(); }
     }
 
     private boolean isAdmin(String tgId) throws Exception {
@@ -139,7 +164,7 @@ public class CoachBot extends TelegramLongPollingBot {
     private void sendStartPhoto(long chatId, String firstName, boolean isAdminFlag, boolean isSuperFlag) {
         SendPhoto sp = new SendPhoto();
         sp.setChatId(String.valueOf(chatId));
-        sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("3.png")));
+        sp.setPhoto(new InputFile(new File("3.png")));
         sp.setCaption(Texts.start(firstName)); // текст приветствия в caption
         sp.setParseMode(ParseMode.MARKDOWN);
         sp.setReplyMarkup(Keyboards.inlineMainMenu(isAdminFlag, isSuperFlag));
@@ -360,9 +385,14 @@ public class CoachBot extends TelegramLongPollingBot {
                 case "SET_CAL" -> { var sm = CaloriesWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
                 case "SET_PLAN" -> { var sm = PlanWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
                 case "SET_NORM" -> { var sm = NormWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
-                case "ASK_SET_CAL", "ASK_SET_PLAN", "ASK_SET_NORM", "SET_ALL" -> {
-                    // Логика сохранена без изменений (см. исходник)
+
+                // ===== НОВОЕ: обработка единого визарда SET_ALL =====
+                case "SET_ALL" -> {
+                    var sm = SetAllWizard.onMessage(tgId, m.getChatId(), text);
+                    if (sm != null) safeExecute(sm);
+                    return;
                 }
+                // ===== /НОВОЕ =====
             }
         }
 
@@ -432,6 +462,7 @@ public class CoachBot extends TelegramLongPollingBot {
             case "SET_ALL" ->
                     data.equals("menu:admin")
                             || data.equals("setall:plan:finish")
+                            || data.equals("all:plan_finish")    // ← НОВОЕ: разрешаем кнопку завершения плана
                             || data.startsWith("date:setall");
             default -> true;
         };
@@ -475,28 +506,17 @@ public class CoachBot extends TelegramLongPollingBot {
     private void safeExecute(Object m) {
         if (m == null) return;
         try {
-            if (m instanceof org.telegram.telegrambots.meta.api.methods.send.SendMessage) {
-                execute((org.telegram.telegrambots.meta.api.methods.send.SendMessage) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.send.SendPhoto) {
-                execute((org.telegram.telegrambots.meta.api.methods.send.SendPhoto) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup) {
-                execute((org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery) {
-                execute((org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText) {
-                execute((org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption) {
-                execute((org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup) {
-                execute((org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.send.SendDocument) {
-                execute((org.telegram.telegrambots.meta.api.methods.send.SendDocument) m);
-            } else if (m instanceof org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage) {
-                execute((org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage) m);
-            } else {
-                System.err.println("safeExecute: unsupported type: " + m.getClass().getName());
-            }
-        } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException e) {
+            if (m instanceof SendMessage sm) execute(sm);
+            else if (m instanceof SendPhoto sp) execute(sp);
+            else if (m instanceof SendMediaGroup mg) execute(mg);
+            else if (m instanceof AnswerCallbackQuery acq) execute(acq);
+            else if (m instanceof EditMessageText emt) execute(emt);
+            else if (m instanceof EditMessageCaption emc) execute(emc);
+            else if (m instanceof EditMessageReplyMarkup emr) execute(emr);
+            else if (m instanceof org.telegram.telegrambots.meta.api.methods.send.SendDocument sd) execute(sd);
+            else if (m instanceof DeleteMessage dm) execute(dm);
+            else System.err.println("safeExecute: unsupported type: " + m.getClass().getName());
+        } catch (TelegramApiException e) {
             e.printStackTrace();
         }
     }
@@ -753,20 +773,12 @@ public class CoachBot extends TelegramLongPollingBot {
 
             String uid = st.payload(); // на шаге client:setall:<uid> мы кладём сюда uid
             LocalDate date = TimeUtil.today().plusDays(offsetDays);
-            String dateStr = TimeUtil.DATE_FMT.format(date);
 
-            // Запоминаем дату в payload (uid|YYYY-MM-DD), шаг 2
-            StateRepo.set(tgId, "SET_ALL", 2, uid + "|" + date.toString());
-
-            SendMessage ask = md(chatId,
-                    "Шаг 2/4 — *План* на дату *" + dateStr + "*.\n" +
-                            "Пока доступен быстрый режим: нажмите «✅ Установить план», чтобы перейти к нормам.\n" +
-                            "Позже можно будет дополнить тренировки/питание отдельными командами.");
-            ask.setReplyMarkup(singlePlanFinishKb());
-            safeExecute(ask);
+            // Стартуем обычный сценарий (КБЖУ → план → нормы)
+            safeExecute(SetAllWizard.start(tgId, chatId, uid, date));
             return;
         }
-        // ======== /новое ========
+        // ======== /НОВОЕ ========
 
         // Напомнить пользователю обновить параметры
         if (data.startsWith("params:remind:")) {
@@ -812,6 +824,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 safeExecute(new SendMessage(String.valueOf(chatId), "Нет доступа."));
                 return;
             }
+            // Шаг 1 — ждём дату (текстом или быстрыми кнопками)
             StateRepo.set(tgId, "SET_ALL", 1, uid);
             SendMessage q = md(chatId, "Шаг 1/4 — *Дата*.\nУкажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
             q.setReplyMarkup(Keyboards.dateQuickPick("date:setall", TimeUtil.today()));
@@ -852,9 +865,20 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
+        // ==== НОВОЕ: завершение плана внутри SET_ALL ====
+        if ("all:plan_finish".equals(data)) {
+            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
+            SendMessage sm = SetAllWizard.finishPlan(tgId, chatId);
+            if (sm != null) safeExecute(sm);
+            return;
+        }
+        // ==== /НОВОЕ ====
+
         if ("setall:plan:finish".equals(data)) {
+            // Сохраняем обратную совместимость: если где-то осталась эта кнопка
             var st = StateRepo.get(tgId);
             if (st == null || !"SET_ALL".equals(st.type())) return;
+            // Переводим на шаг 7 без упражнений
             StateRepo.set(tgId, "SET_ALL", 7, st.payload());
             SendMessage ask = md(chatId, "Шаг 3/4 — *Нормы активности*.\nВведите норму *воды (л)*, например: `2.5`");
             safeExecute(ask);
@@ -893,7 +917,7 @@ public class CoachBot extends TelegramLongPollingBot {
         return name + " | " + tag + " | " + r.id;
     }
 
-    // Переиспользуемый рендер списка клиентов (без Markdown!)
+    /** Рендер списка клиентов тренера (без Markdown). */
     private void renderGroupPicker(long chatId, String adminId, String base, int page, String armStateType, String prompt, boolean withChooseButtons) throws Exception {
         int size = 10;
         int total = countGroupUsers(adminId);
@@ -909,6 +933,36 @@ public class CoachBot extends TelegramLongPollingBot {
 
         var rows = fetchGroupUsersDetailed(adminId, size, offset);
         StringBuilder sb = new StringBuilder("Мои клиенты (стр. "+page+"/"+pages+"):\n");
+        StringBuilder payload = new StringBuilder();
+        int i=1;
+        for (UserRepo.UserRow r : rows) {
+            if (payload.length() > 0) payload.append(",");
+            payload.append(r.id);
+            sb.append(i++).append(". ").append(formatRow(r)).append("\n");
+        }
+        StateRepo.set(adminId, armStateType, 1, payload.toString());
+
+        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\nВведите порядковый номер пользователя:");
+        msg.setReplyMarkup(Keyboards.pager(base, page, pages));
+        safeExecute(msg);
+    }
+
+    /** Пагинированный список СВОБОДНЫХ пользователей (не прикреплённых ни к одному тренеру). */
+    private void renderAllUsersPicker(long chatId, String adminId, String base, int page, String armStateType, String prompt) throws Exception {
+        int size = 10;
+        int total = countFreeUsers();
+        if (total <= 0) {
+            SendMessage empty = new SendMessage(String.valueOf(chatId), "Свободных пользователей нет.");
+            empty.setReplyMarkup(Keyboards.backToAdmin());
+            safeExecute(empty);
+            return;
+        }
+        int pages = Math.max(1, (int)Math.ceil(total / (double) size));
+        page = Math.min(Math.max(1, page), pages);
+        int offset = (page - 1) * size;
+
+        var rows = fetchFreeUsersDetailed(size, offset);
+        StringBuilder sb = new StringBuilder("Свободные пользователи (стр. "+page+"/"+pages+"):\n");
         StringBuilder payload = new StringBuilder();
         int i=1;
         for (UserRepo.UserRow r : rows) {
@@ -947,36 +1001,6 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         StateRepo.set(adminId, armStateType, 1, payload.toString());
 
-        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt);
-        msg.setReplyMarkup(Keyboards.pager(base, page, pages));
-        safeExecute(msg);
-    }
-
-    /** Показать только свободных (не прикреплённых) пользователей при добавлении клиента. */
-    private void renderAllUsersPicker(long chatId, String adminId, String base, int page, String armStateType, String prompt) throws Exception {
-        int size = 20;
-        int total = countFreeUsers();
-        if (total <= 0) {
-            SendMessage empty = new SendMessage(String.valueOf(chatId), "Свободных пользователей пока нет.");
-            empty.setReplyMarkup(Keyboards.backToAdmin());
-            safeExecute(empty);
-            return;
-        }
-        int pages = Math.max(1,(int)Math.ceil(total/(double)size));
-        page = Math.min(Math.max(1,page), pages);
-        int offset = (page-1)*size;
-
-        var rows = fetchFreeUsersDetailed(size, offset); // только свободные
-        StringBuilder payload = new StringBuilder();
-        StringBuilder sb = new StringBuilder("Свободные пользователи (стр. "+page+"/"+pages+"):\n");
-        int i = 1;
-        for (UserRepo.UserRow r : rows) {
-            if (payload.length() > 0) payload.append(",");
-            payload.append(r.id);
-            sb.append(i++).append(". ").append(formatRow(r)).append("\n");
-        }
-
-        StateRepo.set(adminId, armStateType, 1, payload.toString());
         SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt);
         msg.setReplyMarkup(Keyboards.pager(base, page, pages));
         safeExecute(msg);
@@ -1110,7 +1134,6 @@ public class CoachBot extends TelegramLongPollingBot {
             // ======= Блок "Отчёт клиента" тем же стилем =======
             ReportRepo.ReportRow rr = (date != null) ? ReportRepo.getOne(userId, date) : null;
             if (rr != null) {
-                // formatClientSection может сам форматировать Markdown — поэтому экранируем только входящие поля в нём
                 sb.append(ReportRepo.formatClientSection(userId, rr));
             } else {
                 sb.append("*Отчёт клиента:* —");
@@ -1120,7 +1143,7 @@ public class CoachBot extends TelegramLongPollingBot {
         }
 
         SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
-        sm.setParseMode(ParseMode.MARKDOWN); // ВАЖНО: включаем Markdown для форматирования
+        sm.setParseMode(ParseMode.MARKDOWN); // включаем Markdown для форматирования
         sm.setReplyMarkup(Keyboards.pager("reports:"+userId+":"+(desc?"desc":"asc"), page, pages));
         safeExecute(sm);
     }
@@ -1140,7 +1163,7 @@ public class CoachBot extends TelegramLongPollingBot {
         if (photoId != null && !photoId.isBlank()) {
             SendPhoto sp = new SendPhoto();
             sp.setChatId(String.valueOf(chatId));
-            sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(photoId));
+            sp.setPhoto(new InputFile(photoId));
             sp.setCaption("Фото пользователя tg_id: " + userId);
             safeExecute(sp);
         }

@@ -1,10 +1,9 @@
 package com.example.coachbot.service;
 
-import com.example.coachbot.Keyboards;
-import com.example.coachbot.TimeUtil;
-import com.example.coachbot.repo.PlanRepo;
 import com.example.coachbot.repo.StateRepo;
-import com.example.coachbot.repo.NormRepo;
+import com.example.coachbot.repo.PlanRepo;
+import com.example.coachbot.TimeUtil;
+import com.example.coachbot.Keyboards;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 
@@ -13,7 +12,7 @@ import java.time.LocalDate;
 /**
  * Единый визард "Установить параметры" для админа:
  * Шаги:
- *  1) (в CoachBot выбирается дата) -> start() ставит step=2
+ *  1) ввод даты (текстом dd.MM.yyyy или быстрый выбор в CoachBot) -> перевод на шаг 2
  *  2) калории
  *  3) белки
  *  4) жиры
@@ -48,9 +47,26 @@ public class SetAllWizard {
 
         String[] p = st.payload().split("\\|", -1);
         String userId = p[0];
-        LocalDate date = LocalDate.parse(p[1]);
+        // Для шага 1 payload содержит только userId; для остальных — userId|date...
+        LocalDate date = (p.length >= 2 && p[1] != null && !p[1].isBlank())
+                ? LocalDate.parse(p[1])
+                : null;
 
         switch (st.step()) {
+            // ===== НОВОЕ: ручной ввод даты =====
+            case 1 -> {
+                LocalDate d = TimeUtil.parseDate(text);
+                if (d == null) {
+                    SendMessage err = md(chatId,
+                            "Укажите дату в формате `dd.MM.yyyy`, например: `12.11.2025`.\n" +
+                                    "Или воспользуйтесь быстрыми кнопками выбора даты.");
+                    err.setReplyMarkup(Keyboards.backToAdmin());
+                    return err;
+                }
+                // Переходим к обычному сценарию (КБЖУ)
+                return start(adminId, chatId, userId, d);
+            }
+
             // ===== КБЖУ последовательно =====
             case 2 -> { // kcal
                 Integer kcal = parseIntLimited(text, 5);
@@ -82,10 +98,14 @@ public class SetAllWizard {
                     if (s.startsWith("p="))    prot = tryD(s.substring(2));
                     if (s.startsWith("f="))    fat  = tryD(s.substring(2));
                 }
+                // на этом шаге дата уже обязана быть известна (через start() / date:setall)
+                if (date == null) {
+                    // Защита от рассинхрона состояния
+                    return md(chatId, "Не определена дата. Вернитесь и выберите дату заново.");
+                }
                 PlanRepo.setNutrition(userId, date, kcal, prot, fat, carb, adminId);
 
                 // Далее: план тренировки
-                // payload расширим третьей частью — копим упражнения в одной строке (после второго |)
                 String payload = userId + "|" + date + "|";
                 StateRepo.set(adminId, "SET_ALL", 6, payload);
 
@@ -110,7 +130,7 @@ public class SetAllWizard {
                 StateRepo.set(adminId, "SET_ALL", 6, p[0] + "|" + p[1] + "|" + acc);
 
                 SendMessage ok = new SendMessage(String.valueOf(chatId),
-                        "Добавлено.\n Введите следующее упражнение или нажмите «Установить план».");
+                        "Добавлено.\nВведите следующее упражнение или нажмите «Завершить план».");
                 ok.setReplyMarkup(Keyboards.allPlanFinalizeButton());
                 return ok;
             }
@@ -138,7 +158,12 @@ public class SetAllWizard {
                     if (s.startsWith("steps=")) steps = tryInt(s.substring(6));
                 }
 
-                NormRepo.setNorms(userId, date, water, steps, sleep, adminId);
+                // дата известна с шага 2
+                if (date == null) {
+                    return md(chatId, "Не определена дата. Вернитесь и выберите дату заново.");
+                }
+
+                com.example.coachbot.repo.NormRepo.setNorms(userId, date, water, steps, sleep, adminId);
                 StateRepo.clear(adminId);
 
                 SendMessage ok = new SendMessage(String.valueOf(chatId),
