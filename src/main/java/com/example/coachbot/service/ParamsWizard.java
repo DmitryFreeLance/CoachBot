@@ -352,7 +352,7 @@ public class ParamsWizard {
 
     private static Object askPhoto(long chatId) {
         SendMessage askPhoto = new SendMessage(String.valueOf(chatId),
-                "Шаг 11/11. *Загрузите ваше фото* (или нажмите «Пропустить фото»).");
+                "Шаг 11/11. *Загрузите ваше фото* (или нажмите «Пропустить фото»).\n Максимум 1 фото");
         askPhoto.setParseMode(ParseMode.MARKDOWN);
         askPhoto.setReplyMarkup(Keyboards.paramsSkipOrCancel());
         return askPhoto;

@@ -457,22 +457,17 @@ public class CoachBot extends TelegramLongPollingBot {
     }
 
     private InlineKeyboardMarkup pickerKeyboard(String base, int page, int pages, List<UserRepo.UserRow> rows) {
-        // В этой версии мы используем ввод номера руками (без «Выбрать №…»),
-        // поэтому эта клавиатура сейчас не используется. Оставлено как утилита.
         List<List<InlineKeyboardButton>> kb = new ArrayList<>();
-
         int i = 1;
         for (UserRepo.UserRow r : rows) {
             String label = "Выбрать №" + (i++);
             kb.add(List.of(btn(label, base.replace("pick:", "choose:") + ":" + r.id)));
         }
-
         List<InlineKeyboardButton> nav = new ArrayList<>();
         nav.add(btn("⬅️", base + ":" + Math.max(1, page - 1)));
         nav.add(btn("📄 " + page + "/" + pages, "noop"));
         nav.add(btn("➡️", base + ":" + Math.min(pages, page + 1)));
         kb.add(nav);
-
         kb.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
 
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
@@ -544,16 +539,25 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // ===== защита во время отчёта (разрешаем cancel и skip) =====
+        // ===== защита во время отчёта (с поддержкой cancel/skip) =====
         var stUser = StateRepo.get(tgId);
         if (stUser != null && "REPORT".equals(stUser.type())) {
-            if (!"report:cancel".equals(data) && !"report:skip".equals(data)) {
-                SendMessage warn = new SendMessage(String.valueOf(chatId),
-                        "Вы в процессе записи отчёта. Для отмены нажмите кнопку ниже ✖️");
-                warn.setReplyMarkup(Keyboards.reportCancel());
-                safeExecute(warn);
+            if ("report:cancel".equals(data)) {
+                safeExecute(ReportWizard.cancel(String.valueOf(cq.getFrom().getId()), chatId));
+                try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build()); } catch (Exception ignored) {}
                 return;
             }
+            if ("report:skip".equals(data)) {
+                var sm = ReportWizard.onSkip(tgId, chatId);
+                if (sm != null) safeExecute(sm);
+                return;
+            }
+            // любые другие кнопки во время отчёта блокируем
+            SendMessage warn = new SendMessage(String.valueOf(chatId),
+                    "Вы в процессе записи отчёта. Для отмены или пропуска используйте кнопки ниже.");
+            warn.setReplyMarkup(Keyboards.reportSkipOrCancel());
+            safeExecute(warn);
+            return;
         }
 
         // ===== защита во время админ-визардов (с нашими послаблениями) =====
@@ -640,7 +644,7 @@ public class CoachBot extends TelegramLongPollingBot {
             safeExecute(sm);
             return;
         }
-        if ("params:skip".equals(data)) { // пропуск фото
+        if ("params:skip".equals(data)) { // пропуск фото в параметрах
             Object resp = ParamsWizard.skip(tgId, chatId);
             safeExecute(resp);
             return;
@@ -779,20 +783,9 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // отчёт — отмена
-        if ("report:cancel".equals(data)) {
-            safeExecute(ReportWizard.cancel(String.valueOf(cq.getFrom().getId()), chatId));
-            try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build()); } catch (Exception ignored) {}
-            return;
-        }
-        // отчёт — старт заново
+        // отчёт (кнопка старта)
         if ("report:start".equals(data)) {
             safeExecute(ReportWizard.start(String.valueOf(cq.getFrom().getId()), chatId));
-            return;
-        }
-        // отчёт — пропуск (фото/комментарий)
-        if ("report:skip".equals(data)) {
-            safeExecute(ReportWizard.skip(String.valueOf(cq.getFrom().getId()), chatId));
             return;
         }
 
@@ -857,8 +850,10 @@ public class CoachBot extends TelegramLongPollingBot {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             String uid = data.substring("client:reports:".length());
             String owner = GroupRepo.adminOf(uid);
-            if (owner == null || (!owner.equals(tgId) && !isSuper(tgId))) {
-                safeExecute(new SendMessage(String.valueOf(chatId), "Нет доступа."));
+            if (owner == null || (!owner.equals(tgId) && UserRepo.role(tgId) != Roles.SUPERADMIN)) {
+                SendMessage sm = new SendMessage(String.valueOf(chatId), "Нет доступа.");
+                sm.setReplyMarkup(Keyboards.backToMenu());
+                safeExecute(sm);
                 return;
             }
             sendReportsPage(tgId, chatId, uid, 1, true);

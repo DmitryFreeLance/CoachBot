@@ -14,6 +14,9 @@ import java.time.LocalDate;
 
 public class ReportWizard {
 
+    /** Максимальное число фото еды в отчёте за день */
+    private static final int MAX_PHOTOS = 10;
+
     private static SendMessage md(long chatId, String text) {
         SendMessage sm = new SendMessage(String.valueOf(chatId), text);
         sm.setParseMode(ParseMode.MARKDOWN);
@@ -94,26 +97,48 @@ public class ReportWizard {
                 StateRepo.set(userId, "REPORT", 5, "");
                 SendMessage askPhotos = md(chatId,
                         "5/6. Пришлите *фото еды*. Можно отправить *альбом* (до 10 фото за раз) " +
-                                "или несколько сообщений с фото. Когда закончите — нажмите «Пропустить».");
+                                "или несколько сообщений с фото. Максимум — *10 фото за день*.\n" +
+                                "Когда закончите — нажмите «Пропустить».");
                 askPhotos.setReplyMarkup(Keyboards.reportSkipOrCancel());
                 return askPhotos;
             }
             case 5 -> {
-                // Шаг фото еды: можно много сообщений/альбомов, каждое фото добавляется, остаёмся на шаге 5
+                // Шаг фото еды: теперь есть лимит MAX_PHOTOS
+                LocalDate today = TimeUtil.today();
+                int current = ReportRepo.countFoodPhotos(userId, today);
+
                 if (!msg.hasPhoto()) {
                     SendMessage hint = md(chatId,
-                            "5/6. Пришлите фото. Можно альбом (до 10 фото) или несколько сообщений. " +
-                                    "Когда закончите — нажмите «Пропустить», чтобы перейти к комментарию.");
+                            "5/6. Пришлите фото. Можно альбом (до 10 фото) или несколько сообщений.\n" +
+                                    "Максимум — *10 фото за день*. Когда закончите — нажмите «Пропустить», чтобы перейти к комментарию.");
                     hint.setReplyMarkup(Keyboards.reportSkipOrCancel());
                     return hint;
                 }
+
+                if (current >= MAX_PHOTOS) {
+                    // Уже исчерпан лимит — сразу вперёд к комментарию
+                    StateRepo.set(userId, "REPORT", 6, "");
+                    SendMessage full = md(chatId, "Вы загрузили *максимум фото (10)*. Переходим к комментарию.\n\n6/6. Пришлите *текстовый комментарий* или нажмите «Пропустить».");
+                    full.setReplyMarkup(Keyboards.reportSkipOrCancel());
+                    return full;
+                }
+
                 String fileId = msg.getPhoto().get(msg.getPhoto().size() - 1).getFileId();
-                LocalDate today = TimeUtil.today();
                 ReportRepo.addFoodPhoto(userId, today, fileId);
-                int count = ReportRepo.countFoodPhotos(userId, today);
+                int after = current + 1;
+
+                if (after >= MAX_PHOTOS) {
+                    // Достигли лимита — автоматически переносим на комментарий
+                    StateRepo.set(userId, "REPORT", 6, "");
+                    SendMessage cap = md(chatId,
+                            "Фото добавлено (" + after + "/" + MAX_PHOTOS + ").\n" +
+                                    "Вы загрузили *максимум фото*. Переходим к комментарию.\n\n6/6. Пришлите *текстовый комментарий* или нажмите «Пропустить».");
+                    cap.setReplyMarkup(Keyboards.reportSkipOrCancel());
+                    return cap;
+                }
 
                 SendMessage ack = md(chatId,
-                        "Фото добавлено (" + count + "). " +
+                        "Фото добавлено (" + after + "/" + MAX_PHOTOS + "). " +
                                 "Пришлите ещё или нажмите «Пропустить», чтобы перейти к комментарию.");
                 ack.setReplyMarkup(Keyboards.reportSkipOrCancel());
                 return ack;
@@ -137,34 +162,40 @@ public class ReportWizard {
         return null;
     }
 
-    /** Обработка нажатия «⏭ Пропустить» на шагах 5 и 6. */
-    public static SendMessage skip(String userId, long chatId) throws Exception {
+    /** Обработка «⏭ Пропустить» из колбэка. Работает на шагах 5 и 6. */
+    public static SendMessage onSkip(String userId, long chatId) throws Exception {
         var st = StateRepo.get(userId);
-        if (st == null || !"REPORT".equals(st.type())) {
-            return md(chatId, "Сейчас нечего пропускать.");
+        if (st==null || !"REPORT".equals(st.type())) return null;
+
+        if (st.step() <= 4) {
+            // На ранних шагах пропуск не предусмотрен — подскажем
+            SendMessage warn = md(chatId, "Сейчас пропуск недоступен. Пожалуйста, заполните текущий шаг или нажмите «Отменить заполнение».");
+            warn.setReplyMarkup(Keyboards.reportCancel());
+            return warn;
         }
 
-        switch (st.step()) {
-            case 5 -> {
-                // Пропущены фото еды -> переходим к комментарию
-                StateRepo.set(userId, "REPORT", 6, "");
-                SendMessage ask = md(chatId, "6/6. Пришлите *текстовый комментарий* или нажмите «Пропустить».");
-                ask.setReplyMarkup(Keyboards.reportSkipOrCancel());
-                return ask;
-            }
-            case 6 -> {
-                // Пропущен комментарий -> завершаем отчёт без заметки
-                ReportRepo.insertOrUpdateForToday(userId, null,null,null, null,null,null,null, "", null);
-                StateRepo.clear(userId);
-                SendMessage done = new SendMessage(String.valueOf(chatId),
-                        Emojis.CHECK + " Отчёт принят! Отличная работа — ещё один шаг к цели " + Emojis.MUSCLE);
-                done.setReplyMarkup(Keyboards.backToMenu());
-                return done;
-            }
-            default -> {
-                return md(chatId, "Сейчас нечего пропускать.");
-            }
+        if (st.step() == 5) {
+            // Пропуск фото -> комментарий
+            StateRepo.set(userId, "REPORT", 6, "");
+            SendMessage ask = md(chatId, "6/6. Пришлите *текстовый комментарий* или снова нажмите «Пропустить», чтобы завершить без комментария.");
+            ask.setReplyMarkup(Keyboards.reportSkipOrCancel());
+            return ask;
         }
+
+        if (st.step() == 6) {
+            // Пропуск комментария -> завершение без заметки
+            ReportRepo.insertOrUpdateForToday(userId, null,null,null, null,null,null,null, null, null);
+            StateRepo.clear(userId);
+            SendMessage done = new SendMessage(String.valueOf(chatId),
+                    Emojis.CHECK + " Отчёт принят! Отличная работа — ещё один шаг к цели " + Emojis.MUSCLE);
+            done.setReplyMarkup(Keyboards.backToMenu());
+            return done;
+        }
+
+        // На всякий случай
+        SendMessage hint = md(chatId, "Сейчас нечего пропускать.");
+        hint.setReplyMarkup(Keyboards.reportCancel());
+        return hint;
     }
 
     public static SendMessage cancel(String userId, long chatId) throws Exception {
