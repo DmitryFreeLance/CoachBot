@@ -247,14 +247,14 @@ public class ReportRepo {
             sb.append(Emojis.FIRE).append(" Калории: ").append(val(row.kcal)).append("\n")
                     .append(Emojis.MEAT).append(" Белки: ").append(val(row.p)).append("\n")
                     .append(Emojis.AVOCADO).append(" Жиры: ").append(val(row.f)).append("\n")
-                    .append(Emojis.BREAD).append(" Углеводы: ").append(val(row.c)).append("\n");
+                    .append(Emojis.BREAD).append(" Углеводы: ").append(val(row.c)).append("\n\n");
         }
 
         sb.append("📊Нормы активности:\n");
 
         if (row.water != null) sb.append("💧 Вода: ").append(trim(row.water)).append(" л\n");
         if (row.steps != null) sb.append("🚶 Шаги: ").append(row.steps).append("\n");
-        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n");
+        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n\n");
 
         sb.append("*Дополнительная информация:*\n");
         // Фото — сначала считаем из report_photos

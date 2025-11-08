@@ -828,7 +828,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 return;
             }
             SendMessage toUser = new SendMessage(uid,
-                    "🔔 Привет! Внеси, пожалуйста, *сегодня* свои параметры в боте. " +
+                    "🔔 Привет! Внеси, пожалуйста, сегодня свои параметры в боте. " +
                             "Это займёт 2–3 минуты и поможет отслеживать прогресс. 💪");
             toUser.setReplyMarkup(Keyboards.inlineGoParams());
             safeExecute(toUser);
