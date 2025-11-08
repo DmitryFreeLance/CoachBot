@@ -96,6 +96,18 @@ public class CoachBot extends TelegramLongPollingBot {
         } catch (Exception ignored) {}
     }
 
+    // Экранирование спецсимволов Markdown (старый Markdown)
+    private static String mdEscape(String s) {
+        if (s == null) return "—";
+        return s
+                .replace("\\", "\\\\")
+                .replace("_", "\\_")
+                .replace("*", "\\*")
+                .replace("[", "\\[")
+                .replace("]", "\\]")
+                .replace("`", "\\`");
+    }
+
     private static String helpText() {
         return """
 *Как пользоваться ботом* 🧭
@@ -724,7 +736,37 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Быстрые даты (оставлено как было)...
+        // ======== НОВОЕ: быстрые даты для SET_ALL ========
+        if (data.startsWith("date:setall:")) {
+            // ожидаем значения: date:setall:0 / 1 / -1 и т.п.
+            String tail = data.substring("date:setall:".length()).trim();
+            int offsetDays = 0;
+            try { offsetDays = Integer.parseInt(tail); } catch (Exception ignore) {}
+
+            var st = StateRepo.get(tgId);
+            if (st == null || !"SET_ALL".equals(st.type())) {
+                SendMessage sm = md(chatId, "Сессия истекла. Откройте клиента через «Мои клиенты» → выберите клиента → «Написать программу».");
+                sm.setReplyMarkup(Keyboards.backToAdmin());
+                safeExecute(sm);
+                return;
+            }
+
+            String uid = st.payload(); // на шаге client:setall:<uid> мы кладём сюда uid
+            LocalDate date = TimeUtil.today().plusDays(offsetDays);
+            String dateStr = TimeUtil.DATE_FMT.format(date);
+
+            // Запоминаем дату в payload (uid|YYYY-MM-DD), шаг 2
+            StateRepo.set(tgId, "SET_ALL", 2, uid + "|" + date.toString());
+
+            SendMessage ask = md(chatId,
+                    "Шаг 2/4 — *План* на дату *" + dateStr + "*.\n" +
+                            "Пока доступен быстрый режим: нажмите «✅ Установить план», чтобы перейти к нормам.\n" +
+                            "Позже можно будет дополнить тренировки/питание отдельными командами.");
+            ask.setReplyMarkup(singlePlanFinishKb());
+            safeExecute(ask);
+            return;
+        }
+        // ======== /новое ========
 
         // Напомнить пользователю обновить параметры
         if (data.startsWith("params:remind:")) {
@@ -1027,7 +1069,7 @@ public class CoachBot extends TelegramLongPollingBot {
         var rows = ReportRepo.listByUser(userId, page, size, desc);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("*Отчёты клиента* (tg_id: ").append(userId).append(")")
+        sb.append("*Отчёты клиента* (tg\\_id: ").append(mdEscape(userId)).append(")")
                 .append(" — стр. ").append(page).append("/").append(pages).append("\n\n");
 
         if (!rows.isEmpty()) {
@@ -1050,9 +1092,13 @@ public class CoachBot extends TelegramLongPollingBot {
             sb.append("📅 *Дата:* ").append(dateStr).append("\n\n");
 
             // ======= Блок "Заданные тренером" =======
-            String food = (date != null) ? PlanRepo.getNutritionText(userId, date) : "—";
-            String wkt  = (date != null) ? PlanRepo.getWorkoutText(userId, date)   : "—";
-            String norm = (date != null) ? NormRepo.getNormsText(userId, date)     : "—";
+            String foodRaw = (date != null) ? PlanRepo.getNutritionText(userId, date) : "—";
+            String wktRaw  = (date != null) ? PlanRepo.getWorkoutText(userId, date)   : "—";
+            String normRaw = (date != null) ? NormRepo.getNormsText(userId, date)     : "—";
+
+            String food = mdEscape(foodRaw);
+            String wkt  = mdEscape(wktRaw);
+            String norm = mdEscape(normRaw);
 
             sb.append("──────────────\n");
             sb.append("*Задано тренером:*\n");
@@ -1064,6 +1110,7 @@ public class CoachBot extends TelegramLongPollingBot {
             // ======= Блок "Отчёт клиента" тем же стилем =======
             ReportRepo.ReportRow rr = (date != null) ? ReportRepo.getOne(userId, date) : null;
             if (rr != null) {
+                // formatClientSection может сам форматировать Markdown — поэтому экранируем только входящие поля в нём
                 sb.append(ReportRepo.formatClientSection(userId, rr));
             } else {
                 sb.append("*Отчёт клиента:* —");
