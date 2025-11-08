@@ -723,7 +723,7 @@ public class CoachBot extends TelegramLongPollingBot {
         if ("admin:groupadd".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             renderAllUsersPicker(chatId, tgId, "pick:groupadd", 1, "ASK_GROUP_ADD",
-                    "Выберите *свободного* пользователя по номеру для добавления в ваши клиенты:");
+                    "Выберите свободного пользователя по номеру для добавления в ваши клиенты:");
             return;
         }
         if ("admin:groupdel".equals(data)) {
@@ -786,7 +786,7 @@ public class CoachBot extends TelegramLongPollingBot {
         if (data.startsWith("pick:groupadd:")) {
             int page = Integer.parseInt(data.substring("pick:groupadd:".length()));
             renderAllUsersPicker(chatId, tgId, "pick:groupadd", page, "ASK_GROUP_ADD",
-                    "Выберите *свободного* пользователя по номеру для добавления в ваши клиенты:");
+                    "Выберите свободного пользователя по номеру для добавления в ваши клиенты:");
             return;
         }
         if (data.startsWith("pick:admindel:")) {
@@ -1011,7 +1011,7 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         StateRepo.set(adminId, armStateType, 1, payload.toString());
 
-        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\nВведите порядковый номер пользователя:");
+        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString());
         msg.setReplyMarkup(Keyboards.pager(base, page, pages));
         safeExecute(msg);
     }
