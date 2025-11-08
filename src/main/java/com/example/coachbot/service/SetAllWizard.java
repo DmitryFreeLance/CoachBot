@@ -110,7 +110,7 @@ public class SetAllWizard {
                 StateRepo.set(adminId, "SET_ALL", 6, p[0] + "|" + p[1] + "|" + acc);
 
                 SendMessage ok = new SendMessage(String.valueOf(chatId),
-                        "Добавлено. Следующее упражнение или нажмите «Завершить план».");
+                        "Добавлено.\n Введите следующее упражнение или нажмите «Установить план».");
                 ok.setReplyMarkup(Keyboards.allPlanFinalizeButton());
                 return ok;
             }
@@ -118,15 +118,15 @@ public class SetAllWizard {
             // ===== нормы последовательно =====
             case 7 -> { // вода
                 Double water = parseD(text);
-                if (water == null) return md(chatId, "Введите число, например `2.5` (литры воды).");
+                if (water == null) return md(chatId, "*Укажите нормы потребления воды в день в литрах:* (например: 2.4)");
                 StateRepo.set(adminId, "SET_ALL", 8, st.payload() + "|water=" + water);
                 return new SendMessage(String.valueOf(chatId), "Теперь введите *шаги* (шт):");
             }
             case 8 -> { // шаги
                 Integer steps = parseI(text);
-                if (steps == null) return new SendMessage(String.valueOf(chatId), "Введите целое число шагов.");
+                if (steps == null) return new SendMessage(String.valueOf(chatId), "*Укажите суточную норму шагов:* (например: 8500)");
                 StateRepo.set(adminId, "SET_ALL", 9, st.payload() + "|steps=" + steps);
-                return new SendMessage(String.valueOf(chatId), "И последнее: *сон (часы)*:");
+                return new SendMessage(String.valueOf(chatId), "*Укажите сон в часах:* (например: 7.5)");
             }
             case 9 -> { // сон -> save norms, финал
                 Double sleep = parseD(text);

@@ -106,7 +106,7 @@ public class ParamsWizard {
             }
             case 3 -> { // правое бедро
                 Double v = parseD(msg.getText());
-                if (v == null) return md(chatId, "Введите число, например: `58.0`");
+                if (v == null) return md(chatId, "Введите число, например: `58`");
                 String[] p = slots(st.payload()); p[2] = String.valueOf(v);
                 StateRepo.set(userId, TYPE, 4, join(p));
                 return askGalife(chatId); // <<< теперь галифе
@@ -280,7 +280,7 @@ public class ParamsWizard {
         SendPhoto sp = new SendPhoto();
         sp.setChatId(String.valueOf(chatId));
         sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("17.png"))); // правое бедро
-        sp.setCaption("Шаг 3/11. *Правое бедро* (верхняя треть / максимальный обхват), пример: `58.0`");
+        sp.setCaption("Шаг 3/11. *Правое бедро* (верхняя треть / максимальный обхват), пример: `58`");
         sp.setParseMode(ParseMode.MARKDOWN);
         sp.setReplyMarkup(Keyboards.paramsSkipOrCancel());
         return sp;
@@ -352,7 +352,7 @@ public class ParamsWizard {
 
     private static Object askPhoto(long chatId) {
         SendMessage askPhoto = new SendMessage(String.valueOf(chatId),
-                "Шаг 11/11. *Загрузите ваше фото* (или нажмите «Пропустить фото»).\n Максимум 1 фото");
+                "Шаг 11/11. *Загрузите ваше фото* (или нажмите «Пропустить фото»).\n Максимум можно загрузить 1 фотографию");
         askPhoto.setParseMode(ParseMode.MARKDOWN);
         askPhoto.setReplyMarkup(Keyboards.paramsSkipOrCancel());
         return askPhoto;

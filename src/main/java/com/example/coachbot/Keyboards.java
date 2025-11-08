@@ -34,7 +34,7 @@ public class Keyboards {
         rows.add(List.of(btn("📊 Нормы активности", "menu:norms")));
         rows.add(List.of(btn("📝 Отчёт", "menu:report")));
         rows.add(List.of(btn("📏 Мои параметры", "menu:params")));
-        rows.add(List.of(btn("📞 Контакты", "menu:contact")));
+        rows.add(List.of(btn("📞 Контакты тренера", "menu:contact")));
         if (isAdmin) rows.add(List.of(btn("🔧 Админ-панель", "menu:admin")));
         if (isSuper) rows.add(List.of(btn("🛡 Супер-админ", "menu:super")));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
@@ -227,7 +227,7 @@ public class Keyboards {
     public static InlineKeyboardMarkup adminClientActions(String userId) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         // ⬇⬇⬇ БЫЛО 3 кнопки -> теперь одна
-        rows.add(List.of(btn("🧩 Установить параметры", "client:set:" + userId)));
+        rows.add(List.of(btn("🧩 Написать программу", "client:set:" + userId)));
         rows.add(List.of(btn("📝 Отчёты клиента", "client:reports:" + userId)));
         rows.add(List.of(btn("📏 Параметры клиента", "client:params:" + userId)));
         rows.add(List.of(btn("🔙 В админ-панель", "menu:admin")));

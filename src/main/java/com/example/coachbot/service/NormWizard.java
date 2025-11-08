@@ -20,7 +20,7 @@ public class NormWizard {
     public static SendMessage start(String adminId, long chatId, String userId, LocalDate date) throws Exception {
         String payload = userId + "|" + date.toString();
         StateRepo.set(adminId, "SET_NORM", 1, payload);
-        return md(chatId, "Введите норму *воды (л)* на " + TimeUtil.DATE_FMT.format(date) + ":");
+        return md(chatId, "*Укажите нормы потребления воды в день в литрах:* (например: 2.4) на" + TimeUtil.DATE_FMT.format(date) + ":");
     }
 
     public static SendMessage onMessage(String adminId, long chatId, String text) throws Exception {
@@ -34,19 +34,19 @@ public class NormWizard {
         switch (st.step()) {
             case 1 -> {
                 Double water = parseD(text);
-                if (water == null) return md(chatId, "Введите число, например `2.5`.");
+                if (water == null) return md(chatId, "*Укажите нормы потребления воды в день в литрах:* (например: 2.4)");
                 StateRepo.set(adminId, "SET_NORM", 2, st.payload() + "|" + water);
                 return new SendMessage(String.valueOf(chatId), "Шаги (шт):");
             }
             case 2 -> {
                 Integer steps = parseI(text);
-                if (steps == null) return new SendMessage(String.valueOf(chatId), "Введите целое число шагов.");
+                if (steps == null) return new SendMessage(String.valueOf(chatId), "*Укажите суточную норму шагов:* (например: 8500)");
                 StateRepo.set(adminId, "SET_NORM", 3, st.payload() + "|" + steps);
-                return new SendMessage(String.valueOf(chatId), "Сон (часы):");
+                return new SendMessage(String.valueOf(chatId), "*Укажите сон в часах:* (например: 7.5)");
             }
             case 3 -> {
                 Double sleep = parseD(text);
-                if (sleep == null) return new SendMessage(String.valueOf(chatId), "Введите число часов.");
+                if (sleep == null) return new SendMessage(String.valueOf(chatId), "*Укажите сон в часах:* (например: 7.5)");
                 String[] arr = st.payload().split("\\|");
                 Double water = Double.parseDouble(arr[2]);
                 Integer steps = Integer.parseInt(arr[3]);
