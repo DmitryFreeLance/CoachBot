@@ -14,9 +14,9 @@ import java.io.File;
 /**
  * Визард «Мои параметры» — расширенная версия.
  *
- * Добавлено: на КАЖДОМ шаге есть кнопка «⏭ Пропустить замер».
- * Колбэк "params:skip" должен обрабатываться в CoachBot:
- *   CoachBot -> ParamsWizard.skip(...) для пропуска текущего шага.
+ * Обновлено:
+ *  - На каждом шаге есть «⏭ Пропустить замер».
+ *  - Порядок шагов: Галифе (шаг 4) идёт *до* Ягодиц (шаг 5).
  */
 public class ParamsWizard {
 
@@ -62,9 +62,11 @@ public class ParamsWizard {
         switch (step) {
             case 1 -> { p[0]  = ""; StateRepo.set(userId, TYPE, 2,  join(p)); return askThighLeft(chatId); }
             case 2 -> { p[1]  = ""; StateRepo.set(userId, TYPE, 3,  join(p)); return askThighRight(chatId); }
-            case 3 -> { p[2]  = ""; StateRepo.set(userId, TYPE, 4,  join(p)); return askHips(chatId); }
-            case 4 -> { p[3]  = ""; StateRepo.set(userId, TYPE, 5,  join(p)); return askGalife(chatId); }
-            case 5 -> { p[4]  = ""; StateRepo.set(userId, TYPE, 6,  join(p)); return askWaistNavel(chatId); }
+            // шаг 4 теперь ГАЛИФЕ -> сохраняем в p[4]
+            case 3 -> { p[2]  = ""; StateRepo.set(userId, TYPE, 4,  join(p)); return askGalife(chatId); }
+            case 4 -> { p[4]  = ""; StateRepo.set(userId, TYPE, 5,  join(p)); return askHips(chatId); }
+            // шаг 5 ЯГОДИЦЫ -> сохраняем в p[3]
+            case 5 -> { p[3]  = ""; StateRepo.set(userId, TYPE, 6,  join(p)); return askWaistNavel(chatId); }
             case 6 -> { p[5]  = ""; StateRepo.set(userId, TYPE, 7,  join(p)); return askWaistMax(chatId); }
             case 7 -> { p[6]  = ""; StateRepo.set(userId, TYPE, 8,  join(p)); return askChest(chatId); }
             case 8 -> { p[7]=p[8]=p[9] = ""; StateRepo.set(userId, TYPE, 9,  join(p)); return askBicepsLeft(chatId); }
@@ -107,22 +109,22 @@ public class ParamsWizard {
                 if (v == null) return md(chatId, "Введите число, например: `58.0`");
                 String[] p = slots(st.payload()); p[2] = String.valueOf(v);
                 StateRepo.set(userId, TYPE, 4, join(p));
-                return askHips(chatId);
+                return askGalife(chatId); // <<< теперь галифе
             }
-            case 4 -> { // ягодицы
-                Double v = parseD(msg.getText());
-                if (v == null) return md(chatId, "Введите число, например: `96`");
-                String[] p = slots(st.payload()); p[3] = String.valueOf(v);
-                StateRepo.set(userId, TYPE, 5, join(p));
-                return askGalife(chatId);
-            }
-            case 5 -> { // галифе (можно "нет")
+            case 4 -> { // галифе (можно "нет") -> p[4]
                 String txt = msg.hasText() ? msg.getText().trim().toLowerCase() : "";
                 Double v = ("нет".equals(txt) || "no".equals(txt) || "-".equals(txt)) ? null : parseD(txt);
                 if (v == null && !( "нет".equals(txt) || "no".equals(txt) || "-".equals(txt))) {
                     return md(chatId, "Введите число (см) или напишите `нет`.");
                 }
                 String[] p = slots(st.payload()); p[4] = v == null ? "" : String.valueOf(v);
+                StateRepo.set(userId, TYPE, 5, join(p));
+                return askHips(chatId); // далее ягодицы
+            }
+            case 5 -> { // ягодицы -> p[3]
+                Double v = parseD(msg.getText());
+                if (v == null) return md(chatId, "Введите число, например: `96`");
+                String[] p = slots(st.payload()); p[3] = String.valueOf(v);
                 StateRepo.set(userId, TYPE, 6, join(p));
                 return askWaistNavel(chatId);
             }
@@ -238,8 +240,8 @@ public class ParamsWizard {
         Double weight       = d(p[0]);
         Double thighL       = d(p[1]);
         Double thighR       = d(p[2]);
-        Double hips         = d(p[3]);
-        Double galife       = d(p[4]);
+        Double hips         = d(p[3]); // Ягодицы остаются в p[3]
+        Double galife       = d(p[4]); // Галифе — p[4]
         Double waistNavel   = d(p[5]);
         Double waistMax     = d(p[6]);
         Double chEx         = d(p[7]);
@@ -284,21 +286,21 @@ public class ParamsWizard {
         return sp;
     }
 
-    private static Object askHips(long chatId) {
+    private static Object askGalife(long chatId) {
         SendPhoto sp = new SendPhoto();
         sp.setChatId(String.valueOf(chatId));
-        sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("18.png"))); // ягодицы
-        sp.setCaption("Шаг 4/11. *Ягодицы* (ноги вместе, по пику ягодиц), пример: `96`");
+        sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("19.png"))); // галифе
+        sp.setCaption("Шаг 4/11. *Галифе* (при наличии). Введите число в см или напишите `нет`.");
         sp.setParseMode(ParseMode.MARKDOWN);
         sp.setReplyMarkup(Keyboards.paramsSkipOrCancel());
         return sp;
     }
 
-    private static Object askGalife(long chatId) {
+    private static Object askHips(long chatId) {
         SendPhoto sp = new SendPhoto();
         sp.setChatId(String.valueOf(chatId));
-        sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("19.png"))); // галифе
-        sp.setCaption("Шаг 5/11. *Галифе* (при наличии). Введите число в см или напишите `нет`.");
+        sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(new File("18.png"))); // ягодицы
+        sp.setCaption("Шаг 5/11. *Ягодицы* (ноги вместе, по пику ягодиц), пример: `96`");
         sp.setParseMode(ParseMode.MARKDOWN);
         sp.setReplyMarkup(Keyboards.paramsSkipOrCancel());
         return sp;

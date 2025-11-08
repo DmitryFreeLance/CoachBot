@@ -16,9 +16,8 @@ import java.util.concurrent.*;
 
 /**
  * Планировщик:
- *  - 08:00 — общий утренний сценарий (как было).
- *  - Вечер — индивидуально по каждому администратору: ключ settings "evening_time:<adminId>" (формат HH:mm).
- *    Если не задано — можно fallback к "evening_time" или 19:00.
+ *  - 08:00 — общий утренний сценарий (как было) + напоминание админам о клиентах без отчёта за вчера.
+ *  - Вечер — индивидуально по каждому администратору (evening_time:<adminId> / evening_time).
  *  - Вечерняя рассылка: только тем пользователям, у кого нет отчёта за «сегодня».
  */
 public class DailyScheduler {
@@ -44,6 +43,7 @@ public class DailyScheduler {
 
             // 08:00 — сценарий на сегодня (одно сообщение с фото 4.png)
             if (TimeUtil.isNow("08:00")) {
+                // Пользователи: утренний сценарий (как было)
                 List<String> users = UserRepo.allActiveUsers();
                 for (String uid : users) {
                     if (!SentRepo.notSentYet("morning", uid, today)) continue;
@@ -66,10 +66,39 @@ public class DailyScheduler {
                     bot.safeExecute(sp);
                     SentRepo.markSent("morning", uid, today);
                 }
+
+                // Админы: напоминание о клиентах, кто не прислал отчёт за ВЧЕРА
+                LocalDate yesterday = today.minusDays(1);
+                List<UserRepo.UserRow> admins = UserRepo.listActiveAdminsDetailed();
+                for (UserRepo.UserRow a : admins) {
+                    String adminId = a.id;
+                    if (!SentRepo.notSentYet("morning_admin", adminId, today)) continue;
+
+                    List<String> groupUsers = getAllUsersOfAdmin(adminId);
+                    List<String> noReport = new ArrayList<>();
+                    for (String uid : groupUsers) {
+                        if (!ReportRepo.existsFor(uid, yesterday)) {
+                            noReport.add(uid);
+                        }
+                    }
+                    if (!noReport.isEmpty()) {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("🔔 Утреннее напоминание для тренера\n")
+                                .append("Клиенты без отчёта за ").append(TimeUtil.DATE_FMT.format(yesterday)).append(":\n");
+                        int i = 1;
+                        for (String uid : noReport) {
+                            sb.append(i++).append(". tg_id: ").append(uid).append("\n");
+                        }
+                        SendMessage sm = new SendMessage(adminId, sb.toString().trim());
+                        sm.setReplyMarkup(com.example.coachbot.Keyboards.backToAdmin());
+                        bot.safeExecute(sm);
+                    }
+                    // помечаем, даже если список пуст — чтобы не слать повторно в эту минуту
+                    SentRepo.markSent("morning_admin", adminId, today);
+                }
             }
 
             // Вечерняя рассылка — для каждой группы по времени её админа
-            // 1) найдём всех действующих админов
             List<UserRepo.UserRow> admins = UserRepo.listActiveAdminsDetailed();
             for (UserRepo.UserRow a : admins) {
                 String adminId = a.id;
