@@ -137,6 +137,36 @@ public class ReportWizard {
         return null;
     }
 
+    /** Обработка нажатия «⏭ Пропустить» на шагах 5 и 6. */
+    public static SendMessage skip(String userId, long chatId) throws Exception {
+        var st = StateRepo.get(userId);
+        if (st == null || !"REPORT".equals(st.type())) {
+            return md(chatId, "Сейчас нечего пропускать.");
+        }
+
+        switch (st.step()) {
+            case 5 -> {
+                // Пропущены фото еды -> переходим к комментарию
+                StateRepo.set(userId, "REPORT", 6, "");
+                SendMessage ask = md(chatId, "6/6. Пришлите *текстовый комментарий* или нажмите «Пропустить».");
+                ask.setReplyMarkup(Keyboards.reportSkipOrCancel());
+                return ask;
+            }
+            case 6 -> {
+                // Пропущен комментарий -> завершаем отчёт без заметки
+                ReportRepo.insertOrUpdateForToday(userId, null,null,null, null,null,null,null, "", null);
+                StateRepo.clear(userId);
+                SendMessage done = new SendMessage(String.valueOf(chatId),
+                        Emojis.CHECK + " Отчёт принят! Отличная работа — ещё один шаг к цели " + Emojis.MUSCLE);
+                done.setReplyMarkup(Keyboards.backToMenu());
+                return done;
+            }
+            default -> {
+                return md(chatId, "Сейчас нечего пропускать.");
+            }
+        }
+    }
+
     public static SendMessage cancel(String userId, long chatId) throws Exception {
         StateRepo.clear(userId);
         SendMessage sm = new SendMessage(String.valueOf(chatId), "Заполнение отчёта отменено.");

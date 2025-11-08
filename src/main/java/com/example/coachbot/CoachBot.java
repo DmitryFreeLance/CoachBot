@@ -544,10 +544,10 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // ===== защита во время отчёта =====
+        // ===== защита во время отчёта (разрешаем cancel и skip) =====
         var stUser = StateRepo.get(tgId);
         if (stUser != null && "REPORT".equals(stUser.type())) {
-            if (!"report:cancel".equals(data)) {
+            if (!"report:cancel".equals(data) && !"report:skip".equals(data)) {
                 SendMessage warn = new SendMessage(String.valueOf(chatId),
                         "Вы в процессе записи отчёта. Для отмены нажмите кнопку ниже ✖️");
                 warn.setReplyMarkup(Keyboards.reportCancel());
@@ -779,14 +779,20 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // отчёт
+        // отчёт — отмена
         if ("report:cancel".equals(data)) {
             safeExecute(ReportWizard.cancel(String.valueOf(cq.getFrom().getId()), chatId));
             try { execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).text("Отчёт отменён").build()); } catch (Exception ignored) {}
             return;
         }
+        // отчёт — старт заново
         if ("report:start".equals(data)) {
             safeExecute(ReportWizard.start(String.valueOf(cq.getFrom().getId()), chatId));
+            return;
+        }
+        // отчёт — пропуск (фото/комментарий)
+        if ("report:skip".equals(data)) {
+            safeExecute(ReportWizard.skip(String.valueOf(cq.getFrom().getId()), chatId));
             return;
         }
 
