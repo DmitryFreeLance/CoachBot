@@ -971,7 +971,7 @@ public class CoachBot extends TelegramLongPollingBot {
         int offset = (page - 1) * size;
 
         var rows = fetchGroupUsersDetailed(adminId, size, offset);
-        StringBuilder sb = new StringBuilder("Мои клиенты (стр. "+page+"/"+pages+"):\n");
+        StringBuilder sb = new StringBuilder("Мои клиенты (стр. "+page+"/"+pages+"):\n\n" + prompt);
         StringBuilder payload = new StringBuilder();
         int i=1;
         for (UserRepo.UserRow r : rows) {
@@ -1001,7 +1001,7 @@ public class CoachBot extends TelegramLongPollingBot {
         int offset = (page - 1) * size;
 
         var rows = fetchFreeUsersDetailed(size, offset);
-        StringBuilder sb = new StringBuilder("Свободные пользователи (стр. "+page+"/"+pages+"):\n");
+        StringBuilder sb = new StringBuilder("Свободные пользователи (стр. "+page+"/"+pages+"):\n\n" + prompt);
         StringBuilder payload = new StringBuilder();
         int i=1;
         for (UserRepo.UserRow r : rows) {
