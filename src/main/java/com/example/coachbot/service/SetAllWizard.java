@@ -72,23 +72,23 @@ public class SetAllWizard {
                 Integer kcal = parseIntLimited(text, 5);
                 if (kcal == null) return md(chatId, "Введите *целое число калорий* (до 5 цифр).");
                 StateRepo.set(adminId, "SET_ALL", 3, st.payload() + "|kcal=" + kcal);
-                return md(chatId, "Теперь введите *белки (г)* (до 5 цифр):");
+                return md(chatId, "Теперь введите белки (г) (до 5 цифр):");
             }
             case 3 -> { // proteins
                 Double prot = parseDLimited(text, 5);
                 if (prot == null) return md(chatId, "Введите число *белки (г)* (до 5 цифр).");
                 StateRepo.set(adminId, "SET_ALL", 4, st.payload() + "|p=" + prot);
-                return md(chatId, "Теперь *жиры (г)* (до 5 цифр):");
+                return md(chatId, "Теперь жиры (г) (до 5 цифр):");
             }
             case 4 -> { // fats
                 Double fat = parseDLimited(text, 5);
                 if (fat == null) return md(chatId, "Введите число *жиры (г)* (до 5 цифр).");
                 StateRepo.set(adminId, "SET_ALL", 5, st.payload() + "|f=" + fat);
-                return md(chatId, "Теперь *углеводы (г)* (до 5 цифр):");
+                return md(chatId, "Теперь углеводы (г) (до 5 цифр):");
             }
             case 5 -> { // carbs -> save nutrition
                 Double carb = parseDLimited(text, 5);
-                if (carb == null) return md(chatId, "Введите число *углеводы (г)* (до 5 цифр).");
+                if (carb == null) return md(chatId, "Введите число углеводы (г) (до 5 цифр).");
 
                 // извлечь kcal,p,f из payload
                 Integer kcal = null; Double prot=null, fat=null;
@@ -111,7 +111,7 @@ public class SetAllWizard {
 
                 SendMessage sm = new SendMessage(String.valueOf(chatId),
                         "Шаг 2/4: *План тренировки*\n" +
-                                "Отправляйте каждое упражнение *отдельным сообщением*.\n" +
+                                "Отправляйте каждое упражнение отдельным сообщением.\n" +
                                 "Когда закончите — нажмите «Завершить план». ");
                 sm.setReplyMarkup(Keyboards.allPlanFinalizeButton());
                 return sm;
@@ -130,7 +130,7 @@ public class SetAllWizard {
                 StateRepo.set(adminId, "SET_ALL", 6, p[0] + "|" + p[1] + "|" + acc);
 
                 SendMessage ok = new SendMessage(String.valueOf(chatId),
-                        "Добавлено.\nВведите следующее упражнение или нажмите «Завершить план».");
+                        "Упражнение Добавлено.\nВведите следующее упражнение или нажмите «Завершить план».");
                 ok.setReplyMarkup(Keyboards.allPlanFinalizeButton());
                 return ok;
             }
@@ -198,8 +198,8 @@ public class SetAllWizard {
         // Нормы: вода
         StateRepo.set(adminId, "SET_ALL", 7, p[0] + "|" + p[1]);
         return md(chatId,
-                "Шаг 3/4: *Нормы активности*\n" +
-                        "Введите *воду (л)* на " + TimeUtil.DATE_FMT.format(date) + ":");
+                "Шаг 3/4: Нормы активности\n" +
+                        "Введите воду в литрах на " + TimeUtil.DATE_FMT.format(date) + ":");
     }
 
     /* ================= helpers ================= */

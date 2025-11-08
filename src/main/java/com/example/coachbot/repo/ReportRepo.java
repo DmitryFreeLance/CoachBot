@@ -182,9 +182,10 @@ public class ReportRepo {
                     String note  = rs.getString("note");
                     String photo = rs.getString("photo_id");
 
-                    if (sleep != null) sb.append("😴 Сон: ").append(sleep).append(" ч\n");
-                    if (steps != null) sb.append("🚶 Шаги: ").append(steps).append("\n");
+                    // Порядок как в «задано тренером»: вода → шаги → сон
                     if (water != null) sb.append("💧 Вода: ").append(water).append(" л\n");
+                    if (steps != null) sb.append("🚶 Шаги: ").append(steps).append("\n");
+                    if (sleep != null) sb.append("😴 Сон: ").append(sleep).append(" ч\n");
 
                     boolean hasKbju = (kcal != null || pp != null || ff != null || cc != null);
                     if (hasKbju) {
@@ -235,14 +236,17 @@ public class ReportRepo {
         }
     }
 
-    /** Сформатировать «Отчёт клиента» единым стилем (как у тренера), с разделителями. */
+    /** Сформатировать «Отчёт клиента» тем же порядком, что и «Задано тренером». */
     public static String formatClientSection(String userId, ReportRow row) throws Exception {
         StringBuilder sb = new StringBuilder();
         sb.append("*Отчёт клиента:*\n");
-        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n");
-        if (row.steps != null) sb.append("🚶 Шаги: ").append(row.steps).append("\n");
-        if (row.water != null) sb.append("💧 Вода: ").append(trim(row.water)).append(" л\n");
 
+        // НОРМЫ — порядок как у тренера: вода → шаги → сон
+        if (row.water != null) sb.append("💧 Вода: ").append(trim(row.water)).append(" л\n");
+        if (row.steps != null) sb.append("🚶 Шаги: ").append(row.steps).append("\n");
+        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n");
+
+        // КБЖУ
         boolean hasKbju = row.kcal != null || row.p != null || row.f != null || row.c != null;
         if (hasKbju) {
             sb.append(Emojis.FIRE).append(" Калории: ").append(val(row.kcal)).append("\n")
@@ -251,6 +255,7 @@ public class ReportRepo {
                     .append(Emojis.BREAD).append(" Углеводы: ").append(val(row.c)).append("\n");
         }
 
+        // Фото — сначала считаем из report_photos
         int photos = countFoodPhotos(userId, row.date);
         if (photos > 0) {
             sb.append("📸 Фото еды: ").append(photos).append(" шт.\n");

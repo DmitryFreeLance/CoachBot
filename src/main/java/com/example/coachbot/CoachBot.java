@@ -380,6 +380,45 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
+            // Установка времени вечерней рассылки (визард из админки)
+            if ("ASK_SET_TIME".equals(stAdmin.type())) {
+                if (text.startsWith("/")) {
+                    SendMessage warn = new SendMessage(String.valueOf(m.getChatId()),
+                            "Введите время в формате HH:mm, например: 19:00\nИли вернитесь в админ-панель.");
+                    warn.setReplyMarkup(Keyboards.backToAdmin());
+                    safeExecute(warn);
+                    return;
+                }
+
+                String raw = text.trim();
+                java.util.regex.Matcher t = java.util.regex.Pattern
+                        .compile("^([01]?\\d|2[0-3])[:\\.\\s]?([0-5]\\d)$")
+                        .matcher(raw);
+
+                if (!t.matches()) {
+                    SendMessage err = new SendMessage(String.valueOf(m.getChatId()),
+                            "Неверный формат. Укажите время как HH:mm, напр.: 19:30");
+                    err.setReplyMarkup(Keyboards.backToAdmin());
+                    safeExecute(err);
+                    return;
+                }
+
+                int h = Integer.parseInt(t.group(1));
+                int min = Integer.parseInt(t.group(2));
+                String hh = (h < 10 ? "0" : "") + h;
+                String mm = (min < 10 ? "0" : "") + min;
+                String val = hh + ":" + mm;
+
+                SettingsRepo.set("evening_time:" + tgId, val);
+
+                StateRepo.clear(tgId);
+                SendMessage ok = new SendMessage(String.valueOf(m.getChatId()),
+                        "Вечерняя рассылка для вашей группы установлена на " + val + ".");
+                ok.setReplyMarkup(Keyboards.backToAdmin());
+                safeExecute(ok);
+                return;
+            }
+
             // СТАРЫЕ визарды (совместимость)
             switch (stAdmin.type()) {
                 case "SET_CAL" -> { var sm = CaloriesWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
@@ -1077,7 +1116,6 @@ public class CoachBot extends TelegramLongPollingBot {
         return out;
     }
 
-    /** Страница отчётов клиента с выравниванием визуально под данные тренера. */
     private void sendReportsPage(String adminId, long chatId, String userId, int page, boolean desc) throws Exception {
         String owner = GroupRepo.adminOf(userId);
         if (owner == null || (!owner.equals(adminId) && UserRepo.role(adminId) != Roles.SUPERADMIN)) {
@@ -1096,9 +1134,12 @@ public class CoachBot extends TelegramLongPollingBot {
         sb.append("*Отчёты клиента* (tg\\_id: ").append(mdEscape(userId)).append(")")
                 .append(" — стр. ").append(page).append("/").append(pages).append("\n\n");
 
+        java.time.LocalDate date = null;
+
         if (!rows.isEmpty()) {
             String r = rows.get(0);
 
+            // Первая строка содержит дату в формате "📅 *dd.MM.yyyy*"
             String firstLine;
             int nl = r.indexOf('\n');
             if (nl >= 0) firstLine = r.substring(0, nl);
@@ -1107,7 +1148,7 @@ public class CoachBot extends TelegramLongPollingBot {
             java.util.regex.Matcher m = java.util.regex.Pattern
                     .compile("\\*(\\d{2}\\.\\d{2}\\.\\d{4})\\*")
                     .matcher(firstLine);
-            java.time.LocalDate date = null;
+
             if (m.find()) {
                 try { date = java.time.LocalDate.parse(m.group(1), TimeUtil.DATE_FMT); } catch (Exception ignore) {}
             }
@@ -1115,10 +1156,10 @@ public class CoachBot extends TelegramLongPollingBot {
             String dateStr = (date != null) ? TimeUtil.DATE_FMT.format(date) : "—";
             sb.append("📅 *Дата:* ").append(dateStr).append("\n\n");
 
-            // ======= Блок "Заданные тренером" =======
+            // ======= Блок "Задано тренером" =======
             String foodRaw = (date != null) ? PlanRepo.getNutritionText(userId, date) : "—";
             String wktRaw  = (date != null) ? PlanRepo.getWorkoutText(userId, date)   : "—";
-            String normRaw = (date != null) ? NormRepo.getNormsText(userId, date)     : "—";
+            String normRaw = (date != null) ? com.example.coachbot.repo.NormRepo.getNormsText(userId, date) : "—";
 
             String food = mdEscape(foodRaw);
             String wkt  = mdEscape(wktRaw);
@@ -1131,21 +1172,62 @@ public class CoachBot extends TelegramLongPollingBot {
             sb.append("📊 Нормы активности:\n").append(norm).append("\n");
             sb.append("──────────────\n");
 
-            // ======= Блок "Отчёт клиента" тем же стилем =======
+            // ======= Блок "Отчёт клиента" в том же порядке норм (вода→шаги→сон), затем КБЖУ, фото, комментарий =======
             ReportRepo.ReportRow rr = (date != null) ? ReportRepo.getOne(userId, date) : null;
             if (rr != null) {
                 sb.append(ReportRepo.formatClientSection(userId, rr));
             } else {
                 sb.append("*Отчёт клиента:* —");
             }
-        } else {
-            sb.append("Нет отчётов.");
-        }
 
-        SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
-        sm.setParseMode(ParseMode.MARKDOWN); // включаем Markdown для форматирования
-        sm.setReplyMarkup(Keyboards.pager("reports:"+userId+":"+(desc?"desc":"asc"), page, pages));
-        safeExecute(sm);
+            // Отправляем основной текст
+            SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
+            sm.setParseMode(ParseMode.MARKDOWN);
+            sm.setReplyMarkup(Keyboards.pager("reports:"+userId+":"+(desc?"desc":"asc"), page, pages));
+            safeExecute(sm);
+
+            // ======= Фото отчёта =======
+            if (date != null) {
+                // 1) Несколько фото еды из report_photos (если есть)
+                java.util.List<String> ids = ReportRepo.listFoodPhotos(userId, date);
+                if (!ids.isEmpty()) {
+                    java.util.List<org.telegram.telegrambots.meta.api.objects.media.InputMedia> media = new java.util.ArrayList<>();
+                    for (int i = 0; i < ids.size(); i++) {
+                        String fid = ids.get(i);
+                        org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto ph =
+                                new org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto();
+                        ph.setMedia(fid);
+                        if (i == 0) {
+                            ph.setCaption("Фото еды: " + ids.size() + " шт.");
+                        }
+                        media.add(ph);
+                    }
+                    org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup group =
+                            new org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup();
+                    group.setChatId(String.valueOf(chatId));
+                    group.setMedias(media);
+                    safeExecute(group);
+                    return; // если альбом отправили — legacy-скрин ниже не нужен
+                }
+
+                // 2) Иначе — legacy скриншот КБЖУ из reports.photo_id, если есть
+                if (rr != null && rr.photoId != null && !rr.photoId.isBlank()) {
+                    SendPhoto sp = new SendPhoto();
+                    sp.setChatId(String.valueOf(chatId));
+                    sp.setPhoto(new org.telegram.telegrambots.meta.api.objects.InputFile(rr.photoId));
+                    sp.setCaption("Скриншот КБЖУ");
+                    safeExecute(sp);
+                }
+            }
+
+        } else {
+            // Нет строк — пусто
+            sb.append("Нет отчётов.");
+            SendMessage sm = new SendMessage(String.valueOf(chatId), sb.toString());
+            sm.setParseMode(ParseMode.MARKDOWN);
+            sm.setReplyMarkup(Keyboards.pager("reports:"+userId+":"+(desc?"desc":"asc"), page, pages));
+            safeExecute(sm);
+        }
     }
 
     private void showUserParamsForAdmin(String adminId, long chatId, String userId) throws Exception {
