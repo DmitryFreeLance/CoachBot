@@ -35,6 +35,7 @@ public class Keyboards {
         rows.add(List.of(btn("📝 Отчёт", "menu:report")));
         rows.add(List.of(btn("📏 Мои параметры", "menu:params")));
         rows.add(List.of(btn("📞 Контакты тренера", "menu:contact")));
+        rows.add(List.of(urlBtn("🤝 Аренда бота", "https://t.me/Shagindanil")));
         if (isAdmin) rows.add(List.of(btn("🔧 Админ-панель", "menu:admin")));
         if (isSuper) rows.add(List.of(btn("🛡 Супер-админ", "menu:super")));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();

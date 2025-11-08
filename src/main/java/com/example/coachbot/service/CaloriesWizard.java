@@ -55,25 +55,25 @@ public class CaloriesWizard {
 
                 // Вариант 2: по шагам
                 Integer kcal = parseIntLimited(text, 5);
-                if (kcal==null) return md(chatId, "Введите *целое число калорий* (до 5 цифр) или строку `kcal,б,ж,у`.");
+                if (kcal==null) return md(chatId, "Введите целое число калорий или строку `kcal,б,ж,у`.");
                 StateRepo.set(adminId, "SET_CAL", 2, st.payload()+"|"+kcal);
-                return md(chatId, "Теперь введите *белки (г)* (до 5 цифр):");
+                return md(chatId, "Введите число белков: (например: 80)");
             }
             case 2 -> {
                 Double prot = parseDLimited(text, 5);
-                if (prot==null) return md(chatId, "Введите число белков (до 5 цифр).");
+                if (prot==null) return md(chatId, "Введите число белков: (например: 80)");
                 StateRepo.set(adminId, "SET_CAL", 3, st.payload()+"|"+prot);
-                return md(chatId, "Теперь *жиры (г)* (до 5 цифр):");
+                return md(chatId, "Введите число жиров: (например: 50):");
             }
             case 3 -> {
                 Double fat = parseDLimited(text, 5);
-                if (fat==null) return md(chatId, "Введите число жиров (до 5 цифр).");
+                if (fat==null) return md(chatId, "Введите число жиров (например: 50).");
                 StateRepo.set(adminId, "SET_CAL", 4, st.payload()+"|"+fat);
-                return md(chatId, "Теперь *углеводы (г)* (до 5 цифр):");
+                return md(chatId, "Введите число углеводов: (например: 120):");
             }
             case 4 -> {
                 Double carb = parseDLimited(text, 5);
-                if (carb==null) return md(chatId, "Введите число углеводов (до 5 цифр).");
+                if (carb==null) return md(chatId, "Введите число углеводов (например: 120).");
                 String[] arr = st.payload().split("\\|");
                 Integer kcal = Integer.parseInt(arr[2]);
                 Double prot  = Double.parseDouble(arr[3]);
