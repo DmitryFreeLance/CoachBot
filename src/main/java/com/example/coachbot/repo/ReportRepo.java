@@ -11,6 +11,31 @@ import java.util.List;
 
 public class ReportRepo {
 
+    /** DTO одной записи отчёта по конкретному дню. */
+    public static class ReportRow {
+        public final LocalDate date;
+        public final Double sleep;
+        public final Integer steps;
+        public final Double water;
+        public final Integer kcal;
+        public final Double p, f, c;
+        public final String note;
+        public final String photoId;
+
+        public ReportRow(LocalDate date, Double sleep, Integer steps, Double water,
+                         Integer kcal, Double p, Double f, Double c,
+                         String note, String photoId) {
+            this.date = date;
+            this.sleep = sleep;
+            this.steps = steps;
+            this.water = water;
+            this.kcal = kcal;
+            this.p = p; this.f = f; this.c = c;
+            this.note = note;
+            this.photoId = photoId;
+        }
+    }
+
     /** Есть ли отчёт у пользователя за указанную дату (с учётом нашей логики суток в TimeUtil.today()) */
     public static boolean existsFor(String userId, LocalDate date) throws Exception {
         try (Connection c = Db.connect();
@@ -169,8 +194,6 @@ public class ReportRepo {
                                 .append(Emojis.BREAD).append(" Углеводы: ").append(val(cc)).append("\n");
                     }
 
-                    // Новое: показываем кол-во фото еды за день (из report_photos),
-                    // иначе (legacy) — отметку про одиночный скрин.
                     int photosCount = countFoodPhotos(userId, d);
                     if (photosCount > 0) {
                         sb.append("📸 Фото еды: ").append(photosCount).append(" шт.\n");
@@ -189,8 +212,66 @@ public class ReportRepo {
         return out;
     }
 
+    /** Получить одну запись отчёта (как DTO) по пользователю и дате. */
+    public static ReportRow getOne(String userId, LocalDate date) throws Exception {
+        try (Connection c = Db.connect();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT sleep,steps,water,kcal,p,f,c,note,photo_id FROM reports WHERE user_id=? AND date=?")) {
+            ps.setString(1, userId);
+            ps.setString(2, date.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                Double sleep = box(rs.getObject("sleep"));
+                Integer steps = boxInt(rs.getObject("steps"));
+                Double water = box(rs.getObject("water"));
+                Integer kcal = boxInt(rs.getObject("kcal"));
+                Double p = box(rs.getObject("p"));
+                Double f = box(rs.getObject("f"));
+                Double cVal = box(rs.getObject("c"));
+                String note = rs.getString("note");
+                String photo = rs.getString("photo_id");
+                return new ReportRow(date, sleep, steps, water, kcal, p, f, cVal, note, photo);
+            }
+        }
+    }
+
+    /** Сформатировать «Отчёт клиента» единым стилем (как у тренера), с разделителями. */
+    public static String formatClientSection(String userId, ReportRow row) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        sb.append("*Отчёт клиента:*\n");
+        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n");
+        if (row.steps != null) sb.append("🚶 Шаги: ").append(row.steps).append("\n");
+        if (row.water != null) sb.append("💧 Вода: ").append(trim(row.water)).append(" л\n");
+
+        boolean hasKbju = row.kcal != null || row.p != null || row.f != null || row.c != null;
+        if (hasKbju) {
+            sb.append(Emojis.FIRE).append(" Калории: ").append(val(row.kcal)).append("\n")
+                    .append(Emojis.MEAT).append(" Белки: ").append(val(row.p)).append("\n")
+                    .append(Emojis.AVOCADO).append(" Жиры: ").append(val(row.f)).append("\n")
+                    .append(Emojis.BREAD).append(" Углеводы: ").append(val(row.c)).append("\n");
+        }
+
+        int photos = countFoodPhotos(userId, row.date);
+        if (photos > 0) {
+            sb.append("📸 Фото еды: ").append(photos).append(" шт.\n");
+        } else if (row.photoId != null && !row.photoId.isBlank()) {
+            sb.append("🖼 Приложен скрин.\n");
+        }
+
+        if (row.note != null && !row.note.isBlank()) {
+            sb.append("📝 Комментарий: ").append(row.note).append("\n");
+        }
+        return sb.toString().trim();
+    }
+
     // Удобный вывод null → "—"
-    private static String val(Object o) {
-        return o == null ? "—" : String.valueOf(o);
+    private static String val(Object o) { return o == null ? "—" : String.valueOf(o); }
+
+    private static Double box(Object o) { try { return o==null?null:((Number)o).doubleValue(); } catch(Exception e){ return null; } }
+    private static Integer boxInt(Object o) { try { return o==null?null:((Number)o).intValue(); } catch(Exception e){ return null; } }
+    private static Number trim(Double d){
+        if (d==null) return null;
+        if (Math.abs(d - Math.rint(d)) < 1e-9) return Math.round(d);
+        return d;
     }
 }
