@@ -241,12 +241,7 @@ public class ReportRepo {
         StringBuilder sb = new StringBuilder();
         sb.append("*Отчёт клиента:*\n");
 
-        // НОРМЫ — порядок как у тренера: вода → шаги → сон
-        if (row.water != null) sb.append("💧 Вода: ").append(trim(row.water)).append(" л\n");
-        if (row.steps != null) sb.append("🚶 Шаги: ").append(row.steps).append("\n");
-        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n");
-
-        // КБЖУ
+        sb.append("🍽План питания:\n");
         boolean hasKbju = row.kcal != null || row.p != null || row.f != null || row.c != null;
         if (hasKbju) {
             sb.append(Emojis.FIRE).append(" Калории: ").append(val(row.kcal)).append("\n")
@@ -255,6 +250,13 @@ public class ReportRepo {
                     .append(Emojis.BREAD).append(" Углеводы: ").append(val(row.c)).append("\n");
         }
 
+        sb.append("📊Нормы активности:\n");
+
+        if (row.water != null) sb.append("💧 Вода: ").append(trim(row.water)).append(" л\n");
+        if (row.steps != null) sb.append("🚶 Шаги: ").append(row.steps).append("\n");
+        if (row.sleep != null) sb.append("😴 Сон: ").append(trim(row.sleep)).append(" ч\n");
+
+        sb.append("*Дополнительная информация:*\n");
         // Фото — сначала считаем из report_photos
         int photos = countFoodPhotos(userId, row.date);
         if (photos > 0) {

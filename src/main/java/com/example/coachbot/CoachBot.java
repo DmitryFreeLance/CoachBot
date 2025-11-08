@@ -981,7 +981,7 @@ public class CoachBot extends TelegramLongPollingBot {
         }
         StateRepo.set(adminId, armStateType, 1, payload.toString());
 
-        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString() + "\n" + prompt + "\n\nВведите порядковый номер пользователя:");
+        SendMessage msg = new SendMessage(String.valueOf(chatId), sb.toString());
         msg.setReplyMarkup(Keyboards.pager(base, page, pages));
         safeExecute(msg);
     }

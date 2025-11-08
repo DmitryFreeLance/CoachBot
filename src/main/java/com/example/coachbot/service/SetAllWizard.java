@@ -37,8 +37,8 @@ public class SetAllWizard {
         String payload = userId + "|" + date;
         StateRepo.set(adminId, "SET_ALL", 2, payload);
         return md(chatId,
-                "Шаг 1/4: *КБЖУ*\n" +
-                        "Введите *калории* на " + TimeUtil.DATE_FMT.format(date) + " (целое число, до 5 цифр):");
+                "Шаг 1/3: *КБЖУ*\n" +
+                        "🔥 Введите калории на " + TimeUtil.DATE_FMT.format(date) + ":");
     }
 
     public static SendMessage onMessage(String adminId, long chatId, String text) throws Exception {
@@ -70,25 +70,25 @@ public class SetAllWizard {
             // ===== КБЖУ последовательно =====
             case 2 -> { // kcal
                 Integer kcal = parseIntLimited(text, 5);
-                if (kcal == null) return md(chatId, "Введите *целое число калорий* (до 5 цифр).");
+                if (kcal == null) return md(chatId, "🔥Введите целое число калорий:");
                 StateRepo.set(adminId, "SET_ALL", 3, st.payload() + "|kcal=" + kcal);
-                return md(chatId, "Теперь введите белки (г) (до 5 цифр):");
+                return md(chatId, "🥩Теперь введите белки (гр):");
             }
             case 3 -> { // proteins
                 Double prot = parseDLimited(text, 5);
-                if (prot == null) return md(chatId, "Введите число *белки (г)* (до 5 цифр).");
+                if (prot == null) return md(chatId, "🥩Теперь введите белки (гр):");
                 StateRepo.set(adminId, "SET_ALL", 4, st.payload() + "|p=" + prot);
-                return md(chatId, "Теперь жиры (г) (до 5 цифр):");
+                return md(chatId, "🥑Теперь введите жиры (гр):");
             }
             case 4 -> { // fats
                 Double fat = parseDLimited(text, 5);
-                if (fat == null) return md(chatId, "Введите число *жиры (г)* (до 5 цифр).");
+                if (fat == null) return md(chatId, "🥑Теперь введите жиры (гр):");
                 StateRepo.set(adminId, "SET_ALL", 5, st.payload() + "|f=" + fat);
-                return md(chatId, "Теперь углеводы (г) (до 5 цифр):");
+                return md(chatId, "🍞Теперь введите углеводы (гр):");
             }
             case 5 -> { // carbs -> save nutrition
                 Double carb = parseDLimited(text, 5);
-                if (carb == null) return md(chatId, "Введите число углеводы (г) (до 5 цифр).");
+                if (carb == null) return md(chatId, "🍞Теперь введите углеводы (гр):");
 
                 // извлечь kcal,p,f из payload
                 Integer kcal = null; Double prot=null, fat=null;
@@ -110,7 +110,7 @@ public class SetAllWizard {
                 StateRepo.set(adminId, "SET_ALL", 6, payload);
 
                 SendMessage sm = new SendMessage(String.valueOf(chatId),
-                        "Шаг 2/4: *План тренировки*\n" +
+                        "Шаг 2/3: План тренировки\n" +
                                 "Отправляйте каждое упражнение отдельным сообщением.\n" +
                                 "Когда закончите — нажмите «Завершить план». ");
                 sm.setReplyMarkup(Keyboards.allPlanFinalizeButton());
@@ -130,7 +130,7 @@ public class SetAllWizard {
                 StateRepo.set(adminId, "SET_ALL", 6, p[0] + "|" + p[1] + "|" + acc);
 
                 SendMessage ok = new SendMessage(String.valueOf(chatId),
-                        "Упражнение Добавлено.\nВведите следующее упражнение или нажмите «Завершить план».");
+                        "✅Упражнение Добавлено.\nВведите следующее упражнение или нажмите «Завершить план».");
                 ok.setReplyMarkup(Keyboards.allPlanFinalizeButton());
                 return ok;
             }
@@ -138,15 +138,15 @@ public class SetAllWizard {
             // ===== нормы последовательно =====
             case 7 -> { // вода
                 Double water = parseD(text);
-                if (water == null) return md(chatId, "*Укажите нормы потребления воды в день в литрах:* (например: 2.4)");
+                if (water == null) return md(chatId, "💧Укажите нормы потребления воды в день в литрах: (например: 2.4)");
                 StateRepo.set(adminId, "SET_ALL", 8, st.payload() + "|water=" + water);
-                return new SendMessage(String.valueOf(chatId), "Теперь введите *шаги* (шт):");
+                return new SendMessage(String.valueOf(chatId), "Теперь введите норму шагов (например: 8000):");
             }
             case 8 -> { // шаги
                 Integer steps = parseI(text);
-                if (steps == null) return new SendMessage(String.valueOf(chatId), "*Укажите суточную норму шагов:* (например: 8500)");
+                if (steps == null) return new SendMessage(String.valueOf(chatId), "🏃Укажите суточную норму шагов: (например: 8500)");
                 StateRepo.set(adminId, "SET_ALL", 9, st.payload() + "|steps=" + steps);
-                return new SendMessage(String.valueOf(chatId), "*Укажите сон в часах:* (например: 7.5)");
+                return new SendMessage(String.valueOf(chatId), "😴Укажите норму сна в часах: (например: 7.5)");
             }
             case 9 -> { // сон -> save norms, финал
                 Double sleep = parseD(text);
@@ -198,8 +198,8 @@ public class SetAllWizard {
         // Нормы: вода
         StateRepo.set(adminId, "SET_ALL", 7, p[0] + "|" + p[1]);
         return md(chatId,
-                "Шаг 3/4: Нормы активности\n" +
-                        "Введите воду в литрах на " + TimeUtil.DATE_FMT.format(date) + ":");
+                "Шаг 3/3: Нормы активности\n" +
+                        "💧Введите воду в литрах на " + TimeUtil.DATE_FMT.format(date) + ":");
     }
 
     /* ================= helpers ================= */
