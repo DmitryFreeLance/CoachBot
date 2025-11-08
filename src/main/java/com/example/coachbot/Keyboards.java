@@ -27,7 +27,6 @@ public class Keyboards {
 
     /* ========================= Главное меню ========================= */
 
-    // Главное меню пользователя (без админских пунктов, они есть отдельно)
     public static InlineKeyboardMarkup inlineMainMenu(boolean isAdmin, boolean isSuper) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("🍽 План питания", "menu:food")));
@@ -57,21 +56,18 @@ public class Keyboards {
 
     /* ========================= Панели админов ========================= */
 
-    // Обновлённая админ-панель:
-    // - «Контакты тренера» -> «Мои контакты»
     public static InlineKeyboardMarkup adminPanel() {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("👥 Мои клиенты", "admin:my")));
         rows.add(List.of(btn("➕ Добавить клиента", "admin:groupadd")));
         rows.add(List.of(btn("➖ Удалить клиента", "admin:groupdel")));
-        rows.add(List.of(btn("📞 Мои контакты", "admin:contact"))); // <-- переименовано
+        rows.add(List.of(btn("📞 Мои контакты", "admin:contact")));
         rows.add(List.of(btn("⏰ Время рассылки", "admin:settime")));
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(rows);
         return m;
     }
 
-    // Панель супер-админа
     public static InlineKeyboardMarkup superAdminPanel() {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(btn("➕ Добавить админа", "super:add")));
@@ -92,7 +88,7 @@ public class Keyboards {
         return m;
     }
 
-    /* ========================= Кнопки отмены/спец в визардах ========================= */
+    /* ========================= Кнопки отмен/спец ========================= */
 
     public static InlineKeyboardMarkup contactCancelOnly() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
@@ -150,11 +146,22 @@ public class Keyboards {
 
     /* ========================= План тренировок: завершение ========================= */
 
+    /** Старая кнопка — всё ещё используется в обычном PlanWizard */
     public static InlineKeyboardMarkup planFinalizeButton() {
         InlineKeyboardMarkup m = new InlineKeyboardMarkup();
         m.setKeyboard(List.of(
                 List.of(btn("✅ Установить план", "plan:finish")),
                 List.of(btn("🔙 Вернуться в меню", "menu:main"))
+        ));
+        return m;
+    }
+
+    /** Новая кнопка — завершение шага плана внутри единого визарда */
+    public static InlineKeyboardMarkup allPlanFinalizeButton() {
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(List.of(
+                List.of(btn("✅ Завершить план", "all:plan_finish")),
+                List.of(btn("🔙 Вернуться в админ-панель", "menu:admin"))
         ));
         return m;
     }
@@ -219,9 +226,8 @@ public class Keyboards {
 
     public static InlineKeyboardMarkup adminClientActions(String userId) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-        rows.add(List.of(btn("🔥 Установить КБЖУ", "client:cal:" + userId)));
-        rows.add(List.of(btn("🏋️ Установить план", "client:plan:" + userId)));
-        rows.add(List.of(btn("📊 Установить нормы", "client:norm:" + userId)));
+        // ⬇⬇⬇ БЫЛО 3 кнопки -> теперь одна
+        rows.add(List.of(btn("🧩 Установить параметры", "client:set:" + userId)));
         rows.add(List.of(btn("📝 Отчёты клиента", "client:reports:" + userId)));
         rows.add(List.of(btn("📏 Параметры клиента", "client:params:" + userId)));
         rows.add(List.of(btn("🔙 В админ-панель", "menu:admin")));

@@ -45,6 +45,25 @@ public class CoachBot extends TelegramLongPollingBot {
         catch (Exception e) { return null; }
     }
 
+    private static Integer parseIntLimited(String s, int maxDigits){
+        try {
+            String t = s.trim().replace(" ","");
+            if (!t.matches("^\\d{1,"+maxDigits+"}$")) return null;
+            return Integer.parseInt(t);
+        } catch(Exception e){ return null; }
+    }
+    private static Double parseDLimited(String s, int maxDigits){
+        try {
+            String t = s.replace(',','.').trim();
+            String digits = t.replace(".","");
+            if (!digits.matches("^\\d{1,"+maxDigits+"}$")) return null;
+            return Double.parseDouble(t);
+        } catch(Exception e){ return null; }
+    }
+    private static Double parseDoubleSimple(String s){
+        try { return Double.parseDouble(s.replace(',','.').trim()); } catch(Exception e){ return null; }
+    }
+
     public void safeExecute(SendMessage sm) {
         try { execute(sm); } catch (Exception e) { e.printStackTrace(); }
     }
@@ -227,7 +246,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 return;
             }
 
-            // ========== НОВОЕ: выбор клиента из «Мои клиенты» ==========
+            // ========== ВЫБОР КЛИЕНТА И ПОКАЗ ДЕЙСТВИЙ (с одной кнопкой «Установить параметры») ==========
             if ("ASK_CLIENT_PICK".equals(stAdmin.type()) && stAdmin.step() == 1) {
                 Integer idx = parseInt(text);
                 String[] ids = stAdmin.payload().split(",");
@@ -238,10 +257,10 @@ public class CoachBot extends TelegramLongPollingBot {
                     return;
                 }
                 String uid = ids[idx - 1];
-                // Показать меню действий для выбранного клиента
+                // Показать меню действий для выбранного клиента — ТОЛЬКО одна кнопка «Установить параметры» + остальные разделы
                 SendMessage sm = new SendMessage(String.valueOf(m.getChatId()),
                         "Клиент выбран: " + uid + "\nВыберите действие:");
-                sm.setReplyMarkup(Keyboards.adminClientActions(uid));
+                sm.setReplyMarkup(clientActionsSetAll(uid));
                 safeExecute(sm);
                 StateRepo.clear(tgId);
                 return;
@@ -324,7 +343,7 @@ public class CoachBot extends TelegramLongPollingBot {
                 }
             }
 
-            // СТАРЫЕ визарды установки планов/норм/КБЖУ: рабочие шаги, не трогаем
+            // СТАРЫЕ визарды (оставляем совместимость; но в UI мы их больше не показываем)
             switch (stAdmin.type()) {
                 case "SET_CAL" -> { var sm = CaloriesWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
                 case "SET_PLAN" -> { var sm = PlanWizard.onMessage(tgId, m.getChatId(), text); if (sm != null) safeExecute(sm); return; }
@@ -372,6 +391,114 @@ public class CoachBot extends TelegramLongPollingBot {
                         return;
                     }
                 }
+
+                // ===== Новый последовательный визард SET_ALL: шаги по тексту =====
+                case "SET_ALL" -> {
+                    // payload пошагово: uid | date | kcal? | p? | f? | c?
+                    switch (stAdmin.step()) {
+                        case 2 -> { // ждём КБЖУ целиком ИЛИ только kcal
+                            String[] parts = text.split("[,; ]+");
+                            if (parts.length >= 4) {
+                                Integer kcal = parseIntLimited(parts[0], 5);
+                                Double  prot = parseDLimited(parts[1], 5);
+                                Double  fat  = parseDLimited(parts[2], 5);
+                                Double  carb = parseDLimited(parts[3], 5);
+                                if (kcal==null || prot==null || fat==null || carb==null) {
+                                    safeExecute(md(m.getChatId(),"Формат: `1778,133,59,178`. Каждый параметр — до 5 цифр."));
+                                    return;
+                                }
+                                String[] p = stAdmin.payload().split("\\|");
+                                String uid = p[0]; LocalDate date = LocalDate.parse(p[1]);
+                                PlanRepo.setNutrition(uid, date, kcal, prot, fat, carb, tgId);
+                                // Переходим к плану
+                                StateRepo.set(tgId, "SET_ALL", 6, stAdmin.payload()+"|"+kcal+"|"+prot+"|"+fat+"|"+carb);
+                                SendMessage sm = md(m.getChatId(),
+                                        "КБЖУ сохранены.\nТеперь отправляйте *упражнения* по одному сообщению.\nКогда закончите — нажмите «Установить план».");
+                                sm.setReplyMarkup(singlePlanFinishKb());
+                                safeExecute(sm);
+                                return;
+                            }
+                            Integer kcal = parseIntLimited(text, 5);
+                            if (kcal==null) {
+                                safeExecute(md(m.getChatId(),"Введите *целое число калорий* (до 5 цифр) или строку `kcal,б,ж,у`."));
+                                return;
+                            }
+                            StateRepo.set(tgId, "SET_ALL", 3, stAdmin.payload()+"|"+kcal);
+                            safeExecute(md(m.getChatId(),"Теперь введите *белки (г)* (до 5 цифр):"));
+                            return;
+                        }
+                        case 3 -> {
+                            Double prot = parseDLimited(text, 5);
+                            if (prot==null) { safeExecute(md(m.getChatId(),"Введите число белков (до 5 цифр).")); return; }
+                            StateRepo.set(tgId, "SET_ALL", 4, stAdmin.payload()+"|"+prot);
+                            safeExecute(md(m.getChatId(),"Теперь *жиры (г)* (до 5 цифр):"));
+                            return;
+                        }
+                        case 4 -> {
+                            Double fat = parseDLimited(text, 5);
+                            if (fat==null) { safeExecute(md(m.getChatId(),"Введите число жиров (до 5 цифр).")); return; }
+                            StateRepo.set(tgId, "SET_ALL", 5, stAdmin.payload()+"|"+fat);
+                            safeExecute(md(m.getChatId(),"Теперь *углеводы (г)* (до 5 цифр):"));
+                            return;
+                        }
+                        case 5 -> {
+                            Double carb = parseDLimited(text, 5);
+                            if (carb==null) { safeExecute(md(m.getChatId(),"Введите число углеводов (до 5 цифр).")); return; }
+                            String[] arr = stAdmin.payload().split("\\|");
+                            String uid = arr[0]; LocalDate date = LocalDate.parse(arr[1]);
+                            Integer kcal = Integer.parseInt(arr[2]);
+                            Double prot  = Double.parseDouble(arr[3]);
+                            Double fat   = Double.parseDouble(arr[4]);
+                            PlanRepo.setNutrition(uid, date, kcal, prot, fat, carb, tgId);
+                            StateRepo.set(tgId, "SET_ALL", 6, stAdmin.payload()+"|"+carb);
+                            SendMessage sm = md(m.getChatId(),
+                                    "КБЖУ сохранены.\nТеперь отправляйте *упражнения* по одному сообщению.\nКогда закончите — нажмите «Установить план».");
+                            sm.setReplyMarkup(singlePlanFinishKb());
+                            safeExecute(sm);
+                            return;
+                        }
+                        case 6 -> { // сбор упражнений
+                            String[] p = stAdmin.payload().split("\\|");
+                            String uid = p[0]; LocalDate date = LocalDate.parse(p[1]);
+                            PlanRepo.addWorkoutLine(uid, date, text.trim(), tgId);
+                            SendMessage ack = new SendMessage(String.valueOf(m.getChatId()),
+                                    "Добавлено. Следующее упражнение или нажмите «Установить план».");
+                            ack.setReplyMarkup(singlePlanFinishKb());
+                            safeExecute(ack);
+                            return;
+                        }
+                        case 7 -> { // нормы: вода
+                            Double water = parseDoubleSimple(text);
+                            if (water==null) { safeExecute(md(m.getChatId(),"Введите число, например `2.5`.")); return; }
+                            StateRepo.set(tgId, "SET_ALL", 8, stAdmin.payload()+"|"+water);
+                            safeExecute(new SendMessage(String.valueOf(m.getChatId()), "Шаги (шт):"));
+                            return;
+                        }
+                        case 8 -> { // шаги
+                            Integer steps = parseInt(text);
+                            if (steps==null) { safeExecute(new SendMessage(String.valueOf(m.getChatId()), "Введите целое число шагов.")); return; }
+                            StateRepo.set(tgId, "SET_ALL", 9, stAdmin.payload()+"|"+steps);
+                            safeExecute(new SendMessage(String.valueOf(m.getChatId()), "Сон (часы):"));
+                            return;
+                        }
+                        case 9 -> { // сон -> сохранить нормы и завершить
+                            Double sleep = parseDoubleSimple(text);
+                            if (sleep==null) { safeExecute(new SendMessage(String.valueOf(m.getChatId()), "Введите число часов.")); return; }
+                            String[] arr = stAdmin.payload().split("\\|");
+                            String uid = arr[0]; LocalDate date = LocalDate.parse(arr[1]);
+                            Double water = Double.parseDouble(arr[arr.length-2]); // вода на предыдущем шаге
+                            Integer steps = Integer.parseInt(arr[arr.length-1]);  // шаги на предыдущем шаге
+                            NormRepo.setNorms(uid, date, water, steps, sleep, tgId);
+                            StateRepo.clear(tgId);
+                            SendMessage ok = new SendMessage(String.valueOf(m.getChatId()),
+                                    Emojis.CHECK + " Все параметры установлены.");
+                            ok.setReplyMarkup(Keyboards.backToAdmin());
+                            safeExecute(ok);
+                            return;
+                        }
+                    }
+                    return;
+                }
             }
         }
 
@@ -410,7 +537,8 @@ public class CoachBot extends TelegramLongPollingBot {
                  "ASK_REPORTS_VIEW",
                  "ASK_PARAMS_VIEW",
                  "ASK_CLIENT_PICK",
-                 "SET_CAL","SET_PLAN","SET_NORM" -> true;
+                 "SET_CAL","SET_PLAN","SET_NORM",
+                 "SET_ALL" -> true; // добавили новый последовательный визард
             default -> false;
         };
     }
@@ -437,6 +565,10 @@ public class CoachBot extends TelegramLongPollingBot {
                     data.startsWith("pick:client")  || data.equals("menu:admin");
             case "SET_PLAN" -> data.equals("plan:finish") || data.equals("menu:admin");
             case "SET_CAL", "SET_NORM" -> data.equals("menu:admin");
+            case "SET_ALL" -> // разрешаем наши новые кнопки
+                    data.equals("menu:admin")
+                            || data.equals("setall:plan:finish")
+                            || data.startsWith("date:setall");
             default -> true;
         };
     }
@@ -707,7 +839,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Пагинация пиков
+        // Пагинация пиков (старые кнопки оставлены для совместимости)
         if (data.startsWith("pick:setcal:")) {
             int page = Integer.parseInt(data.substring("pick:setcal:".length()));
             renderGroupPicker(chatId, tgId, "pick:setcal", page, "ASK_SET_CAL", "Выберите пользователя по номеру из списка:", false);
@@ -739,7 +871,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Быстрые даты (1..7 дней вперёд) — работают, когда уже выбран конкретный клиент
+        // Быстрые даты (1..7 дней вперёд) — старые ветки
         if (data.startsWith("date:setcal:") || data.startsWith("date:setplan:") || data.startsWith("date:setnorm:")) {
             String sDay = data.substring(data.lastIndexOf(':')+1);
             int day;
@@ -760,6 +892,26 @@ public class CoachBot extends TelegramLongPollingBot {
             } else {
                 safeExecute(NormWizard.start(tgId, chatId, uid, date));
             }
+            return;
+        }
+
+        // ====== НОВОЕ: быстрые даты для единого визарда ======
+        if (data.startsWith("date:setall:")) {
+            String sDay = data.substring("date:setall:".length());
+            int day;
+            try { day = Integer.parseInt(sDay); } catch (Exception e) { day = 1; }
+            day = Math.max(1, Math.min(7, day));
+            LocalDate date = TimeUtil.today().plusDays(day - 1);
+
+            var st = StateRepo.get(tgId);
+            if (st == null || !"SET_ALL".equals(st.type()) || st.step()!=1) return;
+
+            String uid = st.payload(); // на шаге 1 payload = uid
+            StateRepo.set(tgId, "SET_ALL", 2, uid + "|" + date.toString());
+            SendMessage ask = md(chatId,
+                    "Шаг 2/4 — *КБЖУ*.\nВведите строкой `ккал,б,ж,у` (например: `1778,133,59,178`) " +
+                            "или отправьте только калории, чтобы ввести по шагам.");
+            safeExecute(ask);
             return;
         }
 
@@ -789,7 +941,7 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Завершить план
+        // Завершить план (старый визард)
         if ("plan:finish".equals(data)) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
             SendMessage sm = PlanWizard.onFinish(tgId, chatId);
@@ -799,49 +951,19 @@ public class CoachBot extends TelegramLongPollingBot {
 
         // ==== НОВЫЕ кнопки действий по выбранному клиенту ====
 
-        if (data.startsWith("client:cal:")) {
+        // ЕДИНАЯ кнопка: установить параметры (последовательный визард)
+        if (data.startsWith("client:setall:")) {
             if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            String uid = data.substring("client:cal:".length());
-            // проверим доступ
+            String uid = data.substring("client:setall:".length());
             String owner = GroupRepo.adminOf(uid);
             if (owner == null || (!owner.equals(tgId) && !isSuper(tgId))) {
                 safeExecute(new SendMessage(String.valueOf(chatId), "Нет доступа."));
                 return;
             }
-            // спросим дату (быстрые кнопки + ввод вручную)
-            StateRepo.set(tgId, "ASK_SET_CAL", 2, uid);
-            SendMessage q = md(chatId, "Укажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
-            q.setReplyMarkup(Keyboards.dateQuickPick("date:setcal", TimeUtil.today()));
-            safeExecute(q);
-            return;
-        }
-
-        if (data.startsWith("client:plan:")) {
-            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            String uid = data.substring("client:plan:".length());
-            String owner = GroupRepo.adminOf(uid);
-            if (owner == null || (!owner.equals(tgId) && !isSuper(tgId))) {
-                safeExecute(new SendMessage(String.valueOf(chatId), "Нет доступа."));
-                return;
-            }
-            StateRepo.set(tgId, "ASK_SET_PLAN", 2, uid);
-            SendMessage q = md(chatId, "Укажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
-            q.setReplyMarkup(Keyboards.dateQuickPick("date:setplan", TimeUtil.today()));
-            safeExecute(q);
-            return;
-        }
-
-        if (data.startsWith("client:norm:")) {
-            if (!isAdmin(tgId)) { safeExecute(new SendMessage(String.valueOf(chatId), "Только для админов.")); return; }
-            String uid = data.substring("client:norm:".length());
-            String owner = GroupRepo.adminOf(uid);
-            if (owner == null || (!owner.equals(tgId) && !isSuper(tgId))) {
-                safeExecute(new SendMessage(String.valueOf(chatId), "Нет доступа."));
-                return;
-            }
-            StateRepo.set(tgId, "ASK_SET_NORM", 2, uid);
-            SendMessage q = md(chatId, "Укажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
-            q.setReplyMarkup(Keyboards.dateQuickPick("date:setnorm", TimeUtil.today()));
+            // Шаг 1: спросим дату
+            StateRepo.set(tgId, "SET_ALL", 1, uid);
+            SendMessage q = md(chatId, "Шаг 1/4 — *Дата*.\nУкажите дату вручную `dd.MM.yyyy` или выберите дни ниже.");
+            q.setReplyMarkup(Keyboards.dateQuickPick("date:setall", TimeUtil.today()));
             safeExecute(q);
             return;
         }
@@ -879,10 +1001,42 @@ public class CoachBot extends TelegramLongPollingBot {
             return;
         }
 
+        // Завершение шага плана в едином визарде
+        if ("setall:plan:finish".equals(data)) {
+            var st = StateRepo.get(tgId);
+            if (st == null || !"SET_ALL".equals(st.type())) return;
+            // после плана -> нормы (вода)
+            StateRepo.set(tgId, "SET_ALL", 7, st.payload());
+            SendMessage ask = md(chatId, "Шаг 3/4 — *Нормы активности*.\nВведите норму *воды (л)*, например: `2.5`");
+            safeExecute(ask);
+            return;
+        }
+
         if ("noop".equals(data)) { return; }
     }
 
-    /* ==================== списки/пикеры ==================== */
+    /* ==================== Вспомогательные клавиатуры и рендеры ==================== */
+
+    private InlineKeyboardMarkup singlePlanFinishKb() {
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(btn("✅ Установить план", "setall:plan:finish")));
+        rows.add(List.of(btn("🔙 Вернуться в админ-панель", "menu:admin")));
+        m.setKeyboard(rows);
+        return m;
+    }
+
+    /** Клавиатура действий по клиенту с ЕДИНОЙ кнопкой «Установить параметры» */
+    private InlineKeyboardMarkup clientActionsSetAll(String userId) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(btn("⚙️ Установить параметры", "client:setall:" + userId)));
+        rows.add(List.of(btn("📝 Отчёты клиента", "client:reports:" + userId)));
+        rows.add(List.of(btn("📏 Параметры клиента", "client:params:" + userId)));
+        rows.add(List.of(btn("🔙 В админ-панель", "menu:admin")));
+        InlineKeyboardMarkup m = new InlineKeyboardMarkup();
+        m.setKeyboard(rows);
+        return m;
+    }
 
     private String formatRow(UserRepo.UserRow r) {
         String name = (r.firstName != null && !r.firstName.isBlank()) ? r.firstName : "—";
